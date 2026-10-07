@@ -32,13 +32,13 @@ static inline meas_t bench_stop(const bench_timer_t *t) {
 }
 
 /* 1234567 us -> "1234.567 ms" (the NEORV32 printf has no decimals) */
-static inline void print_ms(uint32_t us) {
+static __attribute__((noinline, unused)) void print_ms(uint32_t us) {
   uint32_t f = us % 1000;
   neorv32_uart0_printf("%u.%c%c%c ms", us / 1000, '0' + f / 100, '0' + (f / 10) % 10, '0' + f % 10);
 }
 
 /* bytes as hex, byte 0 first */
-static inline void print_hex(const uint8_t *p, int n) {
+static __attribute__((noinline, unused)) void print_hex(const uint8_t *p, int n) {
   for (int i = 0; i < n; i++) {
     neorv32_uart0_printf("%c%c", "0123456789abcdef"[p[i] >> 4], "0123456789abcdef"[p[i] & 15]);
   }
