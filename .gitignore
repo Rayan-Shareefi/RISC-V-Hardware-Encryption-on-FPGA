@@ -1,0 +1,28 @@
+# ---- big installs / tools: not part of the project (install them on each PC) ----
+/.xinstall/
+/2025.2/
+/DocNav/
+/Downloads/
+/xic/
+/Tools/
+/*.lnk
+
+# ---- Vivado generated folders (rebuilt automatically) ----
+Projects/*/*.cache/
+Projects/*/*.hw/
+Projects/*/*.ip_user_files/
+Projects/*/*.runs/
+Projects/*/*.sim/
+Projects/*/*.gen/
+.Xil/
+*.jou
+*.str
+
+# ---- simulation build output ----
+hw/sim_build*/
+xsim.dir/
+*.wdb
+*.pb
+
+# ---- Office lock files ----
+~$*

@@ -1,0 +1,9 @@
+# The NEORV32 .gitignore hides these file types; keep ours in git:
+# project-1 software and old programs
+!*.c.bak
+# program to upload with the bootloader
+!neorv32_exe.bin
+# program image, linked by the Vivado project
+!neorv32_imem_image.vhd
+# binaries used in the presentation
+!Presentation/*.bin
