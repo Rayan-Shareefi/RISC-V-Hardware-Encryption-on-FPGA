@@ -26,8 +26,9 @@ USER_FLAGS += -Wl,--defsym,__neorv32_ram_size=8k
 #   make clean elf asm exe bin coe mem mif image                       -> chacha20_bench.c
 #   make APP=chacha20_hw_test clean elf asm exe bin coe mem mif image  -> chacha20_hw_test.c
 #   make APP=poly1305_bench ...                                         -> poly1305_bench.c
+#   make APP=keccak_bench ...                                           -> keccak_bench.c
 APP ?= chacha20_bench
-APP_SRC = $(APP).c chacha20_sw.c poly1305_sw.c
+APP_SRC = $(APP).c chacha20_sw.c poly1305_sw.c keccak_sw.c
 
 # Set path to NEORV32 root directory
 NEORV32_HOME ?= ../../..
