@@ -3,7 +3,7 @@
  *
  * 1) Correctness on the RISC-V:
  *    - all official RFC 8439 test vectors (2.5.2 and A.3 #1..#11)
- *    - every message length 0..64 bytes (tags from tools/gen_poly1305_vectors.py)
+ *    - every message length 0..64 bytes (tags from scripts/gen_poly1305_vectors.py)
  * 2) Time for 1000 MACs (1 us counter + cycle counter), for the 34-byte RFC
  *    message and for a 64-byte message (the size the hardware will handle).
  *
