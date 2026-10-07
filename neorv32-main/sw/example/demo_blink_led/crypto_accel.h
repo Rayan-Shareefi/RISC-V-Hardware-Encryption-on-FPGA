@@ -47,4 +47,27 @@ static inline void chacha20_hw_block(const uint32_t key[8], const uint32_t nonce
   for (i = 0; i < 16; i++) out[i] = CRYPTO_READ(CH_DATA + i);  /* first read waits for done */
 }
 
+/*
+ * Faster driver for many blocks with the same key and nonce (this is how a
+ * long message is encrypted: only the block counter changes per block).
+ *   1) chacha20_hw_set_key() once   2) chacha20_hw_block_fast() per block
+ * The key/nonce stay in the accelerator's registers between blocks, and the
+ * loops are unrolled so no loop/branch instructions run between transfers.
+ */
+static inline void chacha20_hw_set_key(const uint32_t key[8], const uint32_t nonce[3]) {
+  #pragma GCC unroll 8
+  for (int i = 0; i < 8; i++) CRYPTO_WRITE(CH_KEY + i, key[i]);
+  #pragma GCC unroll 3
+  for (int i = 0; i < 3; i++) CRYPTO_WRITE(CH_NONCE + i, nonce[i]);
+}
+
+static inline void chacha20_hw_block_fast(uint32_t counter, const uint32_t in[16], uint32_t out[16]) {
+  CRYPTO_WRITE(CH_COUNTER, counter);
+  #pragma GCC unroll 16
+  for (int i = 0; i < 16; i++) CRYPTO_WRITE(CH_DATA + i, in[i]);
+  CHACHA_START();
+  #pragma GCC unroll 16
+  for (int i = 0; i < 16; i++) out[i] = CRYPTO_READ(CH_DATA + i);  /* first read waits for done */
+}
+
 #endif /* CRYPTO_ACCEL_H */

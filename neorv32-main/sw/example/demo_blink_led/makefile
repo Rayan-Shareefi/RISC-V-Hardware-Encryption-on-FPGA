@@ -22,9 +22,11 @@ USER_FLAGS += -Wl,--defsym,__neorv32_ram_size=8k
 # Adjust maximum heap size
 #USER_FLAGS += -Wl,--defsym,__neorv32_heap_size=1k
 
-# Additional sources
-#APP_SRC += $(wildcard ./*.c)
-#APP_INC += -I .
+# Program to build (each program has its own main()), choose it with APP:
+#   make clean elf asm exe bin coe mem mif image                       -> chacha20_bench.c
+#   make APP=chacha20_hw_test clean elf asm exe bin coe mem mif image  -> chacha20_hw_test.c
+APP ?= chacha20_bench
+APP_SRC = $(APP).c chacha20_sw.c
 
 # Set path to NEORV32 root directory
 NEORV32_HOME ?= ../../..
