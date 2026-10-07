@@ -17,7 +17,7 @@ All crypto hardware is in **one VHDL file**, `hw\crypto_accel.vhd`:
 ## 1. Vivado: load the hardware
 
 1. Open `D:\Graduation-Project\Projects\Simple-Code\Simple-Code.xpr`.
-2. *(Only after you change VHDL)* **Generate Bitstream**. This takes about 10 minutes.
+2. *(Only after you change VHDL, or the first time on a new PC)* **Generate Bitstream**. This takes about 10 minutes.
 3. Plug in the board → **Open Hardware Manager → Open Target → Auto Connect**.
 4. **Program Device**, then pick the **`.bit`** file (never the `.bin`):
    `Projects\Simple-Code\Simple-Code.runs\impl_1\neorv32_test_setup_approm.bit`
@@ -48,7 +48,7 @@ After unplugging the board, repeat steps 3–4 (the FPGA forgets it).
 
 ## 3. Tera Term: send and run
 
-1. **Serial**, port **COM3**.
+1. **Serial**, port **COM3**. On another PC, check the number in *Device Manager → Ports*.
    - *Setup → Serial port*: 19200 baud, 8 data bits, no parity, 1 stop bit.
    - *Setup → Terminal → Receive: AUTO*.
 2. Press **BTN0** on the board → press any key within 8 s.
@@ -78,29 +78,58 @@ To change something: edit the C file → `make ...` again → do steps 2–4 aga
 - **Save everything to a file:** before step 3.4, choose *File → Log…* → pick a file name → *Save*.
   Stop it with *File → Stop Logging*. Then open the `.txt` file in VS Code.
 
-## 6. Check the results online
+## 6. Check the results online (tested 2026-10-08, all match the board)
 
-Hex is just how bytes are written: 2 digits per byte. Encrypted data looks random; that is normal.
+**Why hex?** The ciphertext, tag and hash are random bytes, not letters. So the board and the websites both write them in hex (2 characters per byte).
+- "Same result" means the **same hex characters**.
+- Only **decrypting** turns the ciphertext back into your message.
+
 Long results are printed over 2 lines. Join them into one line (no spaces) before pasting.
 
-**ChaCha20:** use CyberChef (gchq.github.io/CyberChef), operation **ChaCha**, Rounds 20.
+The ready links below use the default values in `my_crypto.c`. If you change the message or key, change the same fields on the page.
 
-| Field | `my_crypto` | `demo_chacha20` / `demo_chacha20_poly1305` |
+### ChaCha20: CyberChef (gchq.github.io/CyberChef)
+
+- [Encrypt (ready link)](https://gchq.github.io/CyberChef/#recipe=ChaCha(%7B'option':'UTF8','string':'my%2032-byte%20secret%20key%204%20ChaCha20'%7D,%7B'option':'UTF8','string':'unique%20nonce'%7D,1,'20','Raw','Raw')To_Hex('None',0)&input=SGVsbG8gZnJvbSBvdXIgUklTQy1WIGNyeXB0byBhY2NlbGVyYXRvciE):
+  type the message. The output must equal the board's ciphertext (`9a7eddaf…88f722`).
+- [Decrypt (ready link)](https://gchq.github.io/CyberChef/#recipe=ChaCha(%7B'option':'UTF8','string':'my%2032-byte%20secret%20key%204%20ChaCha20'%7D,%7B'option':'UTF8','string':'unique%20nonce'%7D,1,'20','Hex','Raw')&input=OWE3ZWRkYWY1ODBmM2JlZTQxYTAyMzcxNzc5MTMwZTcyNDg4YTA4ODcxYWUwNDU3MGFlNjg4NzIzMzg0NTk2YjBmNTJmMDE1ODZjMjg4ZjcyMg):
+  paste the board's ciphertext hex. Your message comes back as text.
+
+To set it up by hand, use the operation **ChaCha** with these fields:
+
+| Field | `my_crypto` | `demo_chacha20`, `demo_chacha20_poly1305` |
 |---|---|---|
-| Key | UTF8: the `MY_KEY` text | Hex `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` |
-| Nonce | UTF8: the `MY_NONCE` text | Hex `000000000000004a00000000` |
-| Counter | `MY_COUNTER` (1) | **1** (CyberChef starts at 0, so change it) |
+| Key (the secret) | `my 32-byte secret key 4 ChaCha20`, dropdown **UTF8** | `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f`, dropdown **Hex** |
+| Nonce (number used once) | `unique nonce`, dropdown **UTF8** | `000000000000004a00000000`, dropdown **Hex** |
+| Counter | `1` (CyberChef starts at 0, so change it) | `1` |
+| Rounds | `20` | `20` |
 
-- **Encrypt:** Input Raw, Output Hex, type the message. The result must equal the board's ciphertext.
-- **Decrypt:** Input **Hex**, Output **Raw**, paste the board's ciphertext. Your message comes back.
+- **Encrypt:** set Input = Raw and Output = Raw, then add the operation **To Hex** with Delimiter = None. Without To Hex, the bytes are shown with spaces (`9a 7e dd …`).
+- **Decrypt:** set Input = Hex and Output = Raw.
 - Don't use devglan: it uses a different ChaCha20 variant.
 
-**Keccak-256:** use emn178.github.io/online-tools/keccak_256.html. Type the same message.
+### Keccak-256: CyberChef
+
+- [Keccak 256 (ready link)](https://gchq.github.io/CyberChef/#recipe=Keccak('256')&input=SGVsbG8gZnJvbSBvdXIgUklTQy1WIGNyeXB0byBhY2NlbGVyYXRvciE):
+  type the message. The output must equal the board's hash (`b36c4659…3c293378`).
+- By hand: operation **Keccak**, Size **256**. Don't pick "SHA3", which gives a different hash.
 - Example: "test" gives `9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658`.
 
-**Poly1305:** there is no common online tool. The program checks it in two ways:
-- software = hardware;
-- `demo_chacha20_poly1305` also checks the official RFC 8439 test.
+### Poly1305: javainuse.com/poly1305mac
+
+CyberChef has no Poly1305. Use the "Generate MAC" box on javainuse:
+
+| Field | What to type |
+|---|---|
+| 32-byte Key (Hex) | the hex line under "Poly1305 key" in Tera Term (default: `6f6e652d74696d6520506f6c7931333035206b65792c20333220627974657321`) |
+| Message | the board's **ciphertext** hex (both lines joined). `my_crypto` signs the ciphertext: Encrypt + MAC |
+| Input Format | **Hexadecimal** |
+
+The MAC must equal the board's tag (default: `31bb3bb3fb968c861cde9b9a7bb4af61`).
+- If you want to test the website itself first, use the official RFC 8439 example:
+  - key `85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b`
+  - message `Cryptographic Forum Research Group` (UTF-8)
+  - the tag must be `a8061dc1305136c6c22b8baf0c0127a9`
 
 ## 7. Optional: watch the hardware in the Vivado simulator
 
