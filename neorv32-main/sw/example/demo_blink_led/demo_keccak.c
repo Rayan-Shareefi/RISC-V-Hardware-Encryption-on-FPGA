@@ -1,8 +1,8 @@
 /*
- * demo_keccak.c  -  DEMO 3: Keccak / SHA3-256 hashing, software vs hardware
+ * demo_keccak.c  -  DEMO 3: Keccak-256 hashing, software vs hardware
  *
- *  [1] Official test   NIST SHA3-256 examples ("abc" and the empty message)
- *                      in SW and HW vs the NIST values
+ *  [1] Official test   Keccak-256 known values ("test" and the empty message)
+ *                      in SW and HW vs the published values
  *  [2] Your message    type a message: hashed in SW and HW; then one letter is
  *                      changed and the hash changes completely (about half of
  *                      the 256 bits flip = "avalanche effect")
@@ -19,16 +19,16 @@
 #define RUNS    1000
 #define CHUNK   100
 
-/* NIST SHA3-256 example values */
-static const uint8_t NIST_ABC[32] = {
-  0x3a,0x98,0x5d,0xa7,0x4f,0xe2,0x25,0xb2,0x04,0x5c,0x17,0x2d,0x6b,0xd3,0x90,0xbd,
-  0x85,0x5f,0x08,0x6e,0x3e,0x9d,0x52,0x5b,0x46,0xbf,0xe2,0x45,0x11,0x43,0x15,0x32
+/* Keccak-256 known values (the same as "Keccak-256" online tools, e.g. emn178 keccak_256) */
+static const uint8_t KECCAK_TEST[32] = {
+  0x9c,0x22,0xff,0x5f,0x21,0xf0,0xb8,0x1b,0x11,0x3e,0x63,0xf7,0xdb,0x6d,0xa9,0x4f,
+  0xed,0xef,0x11,0xb2,0x11,0x9b,0x40,0x88,0xb8,0x96,0x64,0xfb,0x9a,0x3c,0xb6,0x58
 };
-static const uint8_t NIST_EMPTY[32] = {
-  0xa7,0xff,0xc6,0xf8,0xbf,0x1e,0xd7,0x66,0x51,0xc1,0x47,0x56,0xa0,0x61,0xd6,0x62,
-  0xf5,0x80,0xff,0x4d,0xe4,0x3b,0x49,0xfa,0x82,0xd8,0x0a,0x4b,0x80,0xf8,0x43,0x4a
+static const uint8_t KECCAK_EMPTY[32] = {
+  0xc5,0xd2,0x46,0x01,0x86,0xf7,0x23,0x3c,0x92,0x7e,0x7d,0xb2,0xdc,0xc7,0x03,0xc0,
+  0xe5,0x00,0xb6,0x53,0xca,0x82,0x27,0x3b,0x7b,0xfa,0xd8,0x04,0x5d,0x85,0xa4,0x70
 };
-static const uint8_t BENCH_MSG[64] = "SHA3-256 benchmark message: 64 bytes of data for the Keccak test";
+static const uint8_t BENCH_MSG[64] = "Keccak-256 benchmark message, 64 bytes of data for the Keccak";
 static const char DEFAULT_MSG[] = "Hello my keccak";
 
 /* ---------------------------------------------------------------------------
@@ -40,9 +40,9 @@ static int one_official(const char *name, const uint8_t *msg, uint32_t len, cons
   memcpy(msg_w, msg, len);
 
   uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
-  sha3_256(msg, len, sw);
+  keccak256(msg, len, sw);
   uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
-  sha3_256_hw(msg_w, len, hw);
+  keccak256_hw(msg_w, len, hw);
   uint32_t c2 = neorv32_cpu_csr_read(CSR_MCYCLE);
 
   int sw_ok = (memcmp(sw, expected, 32) == 0);
@@ -56,9 +56,9 @@ static int one_official(const char *name, const uint8_t *msg, uint32_t len, cons
 }
 
 static int official_test(void) {
-  demo_step("1] Official test: NIST SHA3-256 examples");
-  int fails = one_official("\"abc\"", (const uint8_t *)"abc", 3, NIST_ABC);
-  fails += one_official("\"\" (empty message)", (const uint8_t *)"", 0, NIST_EMPTY);
+  demo_step("1] Official test: Keccak-256 known values");
+  int fails = one_official("\"test\"", (const uint8_t *)"test", 4, KECCAK_TEST);
+  fails += one_official("\"\" (empty message)", (const uint8_t *)"", 0, KECCAK_EMPTY);
   return fails;
 }
 
@@ -94,15 +94,15 @@ static int your_message(void) {
   memcpy(msg_w, msg, 64);
 
   uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
-  sha3_256(msg, n, sw);
+  keccak256(msg, n, sw);
   uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
-  sha3_256_hw(msg_w, n, hw);
+  keccak256_hw(msg_w, n, hw);
   uint32_t c2 = neorv32_cpu_csr_read(CSR_MCYCLE);
   int same = (memcmp(sw, hw, 32) == 0);
 
   neorv32_uart0_printf("  Message:        "); print_text(msg, n);
-  neorv32_uart0_printf("  (%u bytes)\n  SHA3-256 (SW):  ", n); print_hex(sw, 32);
-  neorv32_uart0_printf("   %u cycles\n  SHA3-256 (HW):  ", c1 - c0); print_hex((const uint8_t *)hw, 32);
+  neorv32_uart0_printf("  (%u bytes)\n  Keccak-256 (SW):  ", n); print_hex(sw, 32);
+  neorv32_uart0_printf("   %u cycles\n  Keccak-256 (HW):  ", c1 - c0); print_hex((const uint8_t *)hw, 32);
   neorv32_uart0_printf("   %u cycles\n  Software == hardware: %s\n", c2 - c1, same ? "YES" : "NO");
 
   /* change one letter: flip the lowest bit of the last character */
@@ -111,11 +111,11 @@ static int your_message(void) {
   if (n == 0) n = 1;
   changed[n - 1] ^= 0x01;
   memcpy(msg_w, changed, 64);
-  sha3_256_hw(msg_w, n, hw2);
+  keccak256_hw(msg_w, n, hw2);
   uint32_t diff = bits_different((const uint8_t *)hw, (const uint8_t *)hw2, 32);
 
   neorv32_uart0_printf("\n  Changed 1 bit:  "); print_text(changed, n);
-  neorv32_uart0_printf("\n  SHA3-256 (HW):  "); print_hex((const uint8_t *)hw2, 32);
+  neorv32_uart0_printf("\n  Keccak-256 (HW):  "); print_hex((const uint8_t *)hw2, 32);
   neorv32_uart0_printf("\n  %u of 256 hash bits changed (about half = good hash)\n", diff);
   return !same;
 }
@@ -132,7 +132,7 @@ static meas_t run_sw(void) {
   for (uint32_t c = 0; c < RUNS; c += CHUNK) {
     bench_start(&t);
     for (uint32_t i = c; i < c + CHUNK; i++) {
-      sha3_256(BENCH_MSG, 64, d);
+      keccak256(BENCH_MSG, 64, d);
       MEMORY_BARRIER();
     }
     meas_add(&total, bench_stop(&t));
@@ -152,7 +152,7 @@ static meas_t run_hw(void) {
   for (uint32_t c = 0; c < RUNS; c += CHUNK) {
     bench_start(&t);
     for (uint32_t i = c; i < c + CHUNK; i++) {
-      sha3_256_hw64(msg, d);
+      keccak256_hw64(msg, d);
       MEMORY_BARRIER();
     }
     meas_add(&total, bench_stop(&t));
@@ -170,8 +170,8 @@ static int check_all(void) {
   for (uint32_t i = 0; i < RUNS; i++) {
     memcpy(msg, BENCH_MSG, 64);
     msg[15] ^= i;                                         /* a different message every time */
-    sha3_256((const uint8_t *)msg, 64, sw);
-    sha3_256_hw64(msg, hw);
+    keccak256((const uint8_t *)msg, 64, sw);
+    keccak256_hw64(msg, hw);
     bad += (memcmp(sw, hw, 32) != 0);
     if ((i + 1) % 50 == 0) {
       neorv32_uart0_printf("\r  Checking SW == HW: %u/%u messages, %u differences   ", i + 1, (uint32_t)RUNS, bad);
@@ -188,7 +188,7 @@ int main(void) {
 
   while (1) {
     leds(LED_IDLE);
-    demo_banner("DEMO 3: Keccak / SHA3-256 hashing - software vs hardware");
+    demo_banner("DEMO 3: Keccak-256 hashing - software vs hardware");
     int fails = official_test();
     fails += your_message();
 
@@ -205,7 +205,7 @@ int main(void) {
     demo_step("4] Results: time from first input to last output (1 us counter)");
     print_result("Software ", sw, RUNS);
     print_result("Hardware ", hw, RUNS);
-    print_speedup("SHA3-256", sw, hw);
+    print_speedup("Keccak-256", sw, hw);
     neorv32_uart0_printf("  The Keccak hardware core needs 24 cycles per hash (one round per clock);\n");
     neorv32_uart0_printf("  the rest is the CPU moving 64 bytes in and 32 bytes out.\n");
 

@@ -11,7 +11,7 @@
 --   funct3 = 010  crypto.read  rd, rs1    rd = register[rs1]                       --
 --                                         (CPU waits here until the result is ready) --
 --   funct3 = 011  poly.start              start Poly1305 on the loaded message     --
---   funct3 = 100  keccak.start            start SHA3-256 on the loaded message     --
+--   funct3 = 100  keccak.start            start Keccak-256 on the loaded message   --
 -- Any other funct3/funct7 -> illegal instruction exception.                        --
 -- Register map: see crypto_accel in hw/crypto_accel.vhd.                           --
 -- C macros: crypto_accel.h in the application folder.                              --

@@ -9,7 +9,7 @@
  *   funct3 = 001  crypto.write rs1, rs2  register[rs1] = rs2
  *   funct3 = 010  crypto.read  rd, rs1   rd = register[rs1] (waits until ready)
  *   funct3 = 011  poly.start             start Poly1305 on the loaded message
- *   funct3 = 100  keccak.start           start SHA3-256 on the loaded message
+ *   funct3 = 100  keccak.start           start Keccak-256 on the loaded message
  */
 #ifndef CRYPTO_ACCEL_H
 #define CRYPTO_ACCEL_H
@@ -111,10 +111,10 @@ static inline void poly1305_hw_mac64(const uint32_t key[8], const uint32_t msg[1
 }
 
 /*
- * SHA3-256 digest of a message of len bytes (0..64) with the hardware.
+ * Keccak-256 digest of a message of len bytes (0..64) with the hardware.
  * msg must hold (len + 3) / 4 words (only these are sent); digest = 8 words.
  */
-static inline void sha3_256_hw(const uint32_t *msg, uint32_t len, uint32_t digest[8]) {
+static inline void keccak256_hw(const uint32_t *msg, uint32_t len, uint32_t digest[8]) {
   for (uint32_t i = 0; i < (len + 3) / 4; i++) CRYPTO_WRITE(KE_MSG + i, msg[i]);
   CRYPTO_WRITE(KE_LEN, len);
   KECCAK_START();
@@ -123,7 +123,7 @@ static inline void sha3_256_hw(const uint32_t *msg, uint32_t len, uint32_t diges
 }
 
 /* the same for exactly 64 bytes, fully unrolled (fastest) */
-static inline void sha3_256_hw64(const uint32_t msg[16], uint32_t digest[8]) {
+static inline void keccak256_hw64(const uint32_t msg[16], uint32_t digest[8]) {
   #pragma GCC unroll 16
   for (int i = 0; i < 16; i++) CRYPTO_WRITE(KE_MSG + i, msg[i]);
   CRYPTO_WRITE(KE_LEN, 64);

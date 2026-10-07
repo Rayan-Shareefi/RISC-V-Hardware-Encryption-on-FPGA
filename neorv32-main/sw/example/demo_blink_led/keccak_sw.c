@@ -1,5 +1,7 @@
 /*
- * keccak.c  -  Keccak-f[1600] permutation and SHA3-256 hash (FIPS 202)
+ * keccak.c  -  Keccak-f[1600] permutation and Keccak-256 hash (original Keccak)
+ * (project copy of pk/keccak.c; changes: PRINT_ROUNDS 0, padding 0x01 = Keccak-256
+ *  instead of 0x06 = SHA3-256, function name keccak256)
  * Same structure as poly1305.c: this file holds the algorithm only,
  * the testbench (main) is in keccak_test.c.
  *
@@ -75,8 +77,13 @@ void keccak_f1600(uint64_t A[25]) {
     }
 }
 
-/* SHA3-256: rate = 136 bytes, capacity = 512 bits, padding 0x06 ... 0x80 */
-void sha3_256(const uint8_t *msg, uint32_t len, uint8_t digest[32]) {
+/* Padding byte after the message - the ONLY difference between
+     0x01 = Keccak-256 (original Keccak, e.g. Ethereum, "Keccak-256" online tools)
+     0x06 = SHA3-256   (NIST FIPS 202 standard)                                    */
+#define KECCAK_PAD 0x01
+
+/* Keccak-256: rate = 136 bytes, capacity = 512 bits, padding KECCAK_PAD ... 0x80 */
+void keccak256(const uint8_t *msg, uint32_t len, uint8_t digest[32]) {
     uint64_t A[25];
     uint8_t block[136];
     uint32_t i, n;
@@ -88,7 +95,7 @@ void sha3_256(const uint8_t *msg, uint32_t len, uint8_t digest[32]) {
         memset(block, 0, sizeof block);
         memcpy(block, msg, n);
         if (n < 136) {                  /* last block: add padding */
-            block[n]   ^= 0x06;
+            block[n]   ^= KECCAK_PAD;
             block[135] ^= 0x80;
         }
         for (i = 0; i < 17; i++) {      /* absorb: XOR 17 lanes (little-endian) */

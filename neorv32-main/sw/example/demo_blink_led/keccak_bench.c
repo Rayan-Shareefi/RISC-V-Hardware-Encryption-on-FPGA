@@ -1,8 +1,8 @@
 /*
- * keccak_bench.c  -  Phases 6 + 8: Keccak (SHA3-256) software vs hardware
+ * keccak_bench.c  -  Phases 6 + 8: Keccak (Keccak-256) software vs hardware
  *
  * 1) Correctness (digests from scripts/gen_keccak_vectors.py):
- *    - software: NIST SHA3-256 examples, the pk/ test message "Hello my keccak",
+ *    - software: Keccak-256 known values, the pk/ test message "Hello my keccak",
  *      every length 0..64 bytes and multi-block lengths 135..300
  *    - hardware: the same for messages up to 64 bytes
  *    - 100 different 64-byte messages: software == hardware
@@ -31,13 +31,13 @@ static int check_vectors(void) {
   int fails = 0;
 
   for (unsigned v = 0; v < KECCAK_NUM_VECTORS; v++) {
-    sha3_256(KECCAK_VECTORS[v].msg, KECCAK_VECTORS[v].len, d);
+    keccak256(KECCAK_VECTORS[v].msg, KECCAK_VECTORS[v].len, d);
     int ok = (memcmp(d, KECCAK_VECTORS[v].digest, 32) == 0);
     int hw_ok = 1;
     if (KECCAK_VECTORS[v].len <= 64) {               /* the hardware takes up to 64 bytes */
       memset(msg, 0, 64);
       memcpy(msg, KECCAK_VECTORS[v].msg, KECCAK_VECTORS[v].len);
-      sha3_256_hw(msg, KECCAK_VECTORS[v].len, dw);
+      keccak256_hw(msg, KECCAK_VECTORS[v].len, dw);
       hw_ok = (memcmp(dw, KECCAK_VECTORS[v].digest, 32) == 0);
     }
     neorv32_uart0_printf("%s  %s (%u bytes)  SW %s, HW %s\n", (ok && hw_ok) ? "PASS" : "FAIL",
@@ -49,10 +49,10 @@ static int check_vectors(void) {
   uint32_t bad = 0;
   memcpy(msg, KECCAK_PATTERN, 64);
   for (unsigned k = 0; k < KECCAK_NUM_LENS; k++) {
-    sha3_256(KECCAK_PATTERN, KECCAK_LENS[k], d);
+    keccak256(KECCAK_PATTERN, KECCAK_LENS[k], d);
     bad += (memcmp(d, KECCAK_LEN_DIGESTS[k], 32) != 0);
     if (KECCAK_LENS[k] <= 64) {
-      sha3_256_hw(msg, KECCAK_LENS[k], dw);
+      keccak256_hw(msg, KECCAK_LENS[k], dw);
       bad += (memcmp(dw, KECCAK_LEN_DIGESTS[k], 32) != 0);
     }
   }
@@ -65,8 +65,8 @@ static int check_vectors(void) {
   for (uint32_t i = 0; i < CHECK_RUNS; i++) {
     memcpy(msg, KECCAK_PATTERN, 64);
     msg[0] ^= i;                                     /* a different message each run */
-    sha3_256((const uint8_t *)msg, 64, d);
-    sha3_256_hw64(msg, dw);
+    keccak256((const uint8_t *)msg, 64, d);
+    keccak256_hw64(msg, dw);
     diff += (memcmp(d, dw, 32) != 0);
   }
   neorv32_uart0_printf("%s  %u different messages: software == hardware, %u differences\n",
@@ -83,7 +83,7 @@ static meas_t bench_sw(void) {
   bench_timer_t t;
   bench_start(&t);
   for (uint32_t i = 0; i < RUNS; i++) {
-    sha3_256(KECCAK_PATTERN, 64, d);
+    keccak256(KECCAK_PATTERN, 64, d);
   }
   return bench_stop(&t);
 }
@@ -94,7 +94,7 @@ static meas_t bench_hw(void) {
   memcpy(msg, KECCAK_PATTERN, 64);
   bench_start(&t);
   for (uint32_t i = 0; i < RUNS; i++) {
-    sha3_256_hw64(msg, d);
+    keccak256_hw64(msg, d);
   }
   return bench_stop(&t);
 }
@@ -115,14 +115,14 @@ int main(void) {
   }
 
   while (1) {
-    neorv32_uart0_printf("\n=== Keccak (SHA3-256): software vs hardware, %u hashes ===\n", (uint32_t)RUNS);
+    neorv32_uart0_printf("\n=== Keccak (Keccak-256): software vs hardware, %u hashes ===\n", (uint32_t)RUNS);
 
     /* show one real digest: the pk/ test message, from software and hardware */
     uint8_t d[32];
     uint32_t msg[16] = {0}, dw[8];
-    sha3_256((const uint8_t *)"Hello my keccak", 15, d);
+    keccak256((const uint8_t *)"Hello my keccak", 15, d);
     memcpy(msg, "Hello my keccak", 15);
-    sha3_256_hw(msg, 15, dw);
+    keccak256_hw(msg, 15, dw);
     neorv32_uart0_printf("Message: \"Hello my keccak\"\nSW: ");
     print_hex(d, 32);
     neorv32_uart0_printf("\nHW: ");
@@ -136,8 +136,8 @@ int main(void) {
     meas_t hw = bench_hw();
 
     neorv32_uart0_printf("\nTime from first input to last output (1 us counter):\n");
-    print_row("SHA3-256, SW  ", sw);
-    print_row("SHA3-256, HW  ", hw);
+    print_row("Keccak-256, SW  ", sw);
+    print_row("Keccak-256, HW  ", hw);
     uint32_t x10 = (uint32_t)(((uint64_t)sw.cycles * 10u + hw.cycles / 2) / hw.cycles);
     neorv32_uart0_printf("\nSpeedup: %u.%ux\n", x10 / 10, x10 % 10);
     neorv32_uart0_printf("HW core alone: 24 cycles/hash (one Keccak round per clock)\n");

@@ -15,8 +15,8 @@
 -- 64 bytes (2.5.2, A.3 #1, #5-#11, incl. the h >= p edge cases) and every
 -- message length 0..64. Also checks done low on start, done + tag stable after.
 --
--- Keccak / SHA3-256 tests (tb_keccak_vectors_pkg.vhd, made by
--- scripts/gen_keccak_vectors.py): NIST examples, the pk/ test message and
+-- Keccak-256 tests (tb_keccak_vectors_pkg.vhd, made by
+-- scripts/gen_keccak_vectors.py): Keccak-256 known values, the pk/ test message and
 -- every message length 0..64. Also checks the 24-cycle latency.
 --
 -- Prints PASS/FAIL per test and a final summary.
@@ -311,7 +311,7 @@ begin
             end if;
         end procedure;
 
-        -- one SHA3-256 digest; returns ok and the latency (start edge -> done)
+        -- one Keccak-256 digest; returns ok and the latency (start edge -> done)
         procedure run_keccak(tv : keccak_tv_t; variable ok : out boolean; variable cycles : out natural) is
             variable n : natural := 0;
         begin
@@ -406,11 +406,11 @@ begin
         for v in 0 to KECCAK_NUM_NAMED - 1 loop
             run_keccak(KECCAK_TVS(v), p_ok, p_cycles);
             if p_ok and p_cycles = 24 then
-                report "PASS  SHA3-256 " & KECCAK_TVS(v).name & " (" & integer'image(KECCAK_TVS(v).len) &
+                report "PASS  Keccak-256 " & KECCAK_TVS(v).name & " (" & integer'image(KECCAK_TVS(v).len) &
                        " bytes, " & integer'image(p_cycles) & " cycles)" severity note;
                 passed := passed + 1;
             else
-                report "FAIL  SHA3-256 " & KECCAK_TVS(v).name & " (" & integer'image(p_cycles) & " cycles)" severity error;
+                report "FAIL  Keccak-256 " & KECCAK_TVS(v).name & " (" & integer'image(p_cycles) & " cycles)" severity error;
                 errors := errors + 1;
             end if;
         end loop;
@@ -423,10 +423,10 @@ begin
             end if;
         end loop;
         if k_bad = 0 then
-            report "PASS  SHA3-256 every message length 0..64 bytes (24 cycles each)" severity note;
+            report "PASS  Keccak-256 every message length 0..64 bytes (24 cycles each)" severity note;
             passed := passed + 1;
         else
-            report "FAIL  SHA3-256 lengths 0..64: " & integer'image(k_bad) & " wrong" severity error;
+            report "FAIL  Keccak-256 lengths 0..64: " & integer'image(k_bad) & " wrong" severity error;
             errors := errors + 1;
         end if;
 

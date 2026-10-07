@@ -25,7 +25,7 @@ add_wave {{/tb_crypto_accel/dut_poly/state}}
 add_wave -radix unsigned {{/tb_crypto_accel/po_len}} {{/tb_crypto_accel/dut_poly/remaining}} {{/tb_crypto_accel/dut_poly/wait_cnt}}
 add_wave -radix hex {{/tb_crypto_accel/dut_poly/h}} {{/tb_crypto_accel/po_tag}}
 
-add_wave_divider {Keccak / SHA3-256 - 24 rounds, one per clock}
+add_wave_divider {Keccak-256 - 24 rounds, one per clock}
 add_wave {{/tb_crypto_accel/ke_start}} {{/tb_crypto_accel/ke_done}}
 add_wave {{/tb_crypto_accel/dut_keccak/fsm}}
 add_wave -radix unsigned {{/tb_crypto_accel/ke_len}} {{/tb_crypto_accel/dut_keccak/round_cnt}}

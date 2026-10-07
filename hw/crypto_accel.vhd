@@ -4,7 +4,7 @@
 -- Contents (each part must be defined before it is used):
 --   Part 1     chacha20_core   ChaCha20 block encryption (RFC 8439)
 --   Part 2-8   poly1305_mac    Poly1305 MAC (RFC 8439), from pk/poly1305_mac.vhd
---   Part 9-12  keccak_hash     Keccak / SHA3-256 (FIPS 202), from pk/keccak_hash.vhd
+--   Part 9-12  keccak_hash     Keccak-256 (original Keccak, padding 0x01), from pk/keccak_hash.vhd
 --   Part 13    crypto_accel    TOP: register map + control, used by the CPU's CFU
 --
 -- Byte order (same as poly1305_mac / keccak_hash): byte 0 is in bits 7..0,
@@ -961,10 +961,11 @@ end rtl;
 
 
 -- ============================================================================
--- Parts 9-12: Keccak / SHA3-256 (copied from pk/keccak_hash.vhd, logic unchanged)
+-- Parts 9-12: Keccak-256 (from pk/keccak_hash.vhd; only change: padding byte 0x01 = Keccak-256
+--             instead of 0x06 = SHA3-256, see PAD_BYTE in Part 12)
 --   Parts 9-11: official Keccak team VHDL (KeccakVHDL 3.0, high-speed core),
 --               public domain (CC0) - see the notice at the start of each part
---   Part 12:    keccak_hash controller (SHA3-256), written for this project
+--   Part 12:    keccak_hash controller (Keccak-256), written for this project
 -- ============================================================================
 
 
@@ -1336,19 +1337,19 @@ end rtl;
 
 
 -- ============================================================================
--- Part 12: keccak_hash - TOP  (SHA3-256)
+-- Part 12: keccak_hash - TOP  (Keccak-256)
 -- ============================================================================
 -- Top module, same style as chacha20_encrypt / poly1305_mac:
 -- pulse start, wait for done.
 -- It uses the Keccak team round (Part 11) and round constants (Part 10):
---   1) load: pad the message (0x06 ... 0x80) and put it in the state
+--   1) load: pad the message (PAD_BYTE ... 0x80) and put it in the state
 --   2) 24 rounds of Keccak-f[1600], one round per clock
 --   3) digest = first 32 bytes of the state
 --
 -- Byte order (same as ChaCha20 / Poly1305): byte 0 is in bits 7..0
 --   msg(511:0)    : message, up to 64 bytes
 --   msg_len       : message length in bytes (0..64)
---   digest(255:0) : SHA3-256 hash (32 bytes)
+--   digest(255:0) : Keccak-256 hash (32 bytes)
 --
 -- Lane (x, y) of the Keccak state is state(y)(x); lane(0,0) = state(0)(0).
 -- File type in Vivado: VHDL 2008
@@ -1386,8 +1387,13 @@ architecture rtl of keccak_hash is
     signal digest_r  : std_logic_vector(255 downto 0) := (others => '0');
     signal done_r    : std_logic := '0';
 
-    -- first (and only) block: message bytes, then 0x06, zeros, and 0x80 at byte 135
-    -- (SHA3-256 rate = 136 bytes; the other 64 bytes of the state start at 0)
+    -- Padding byte right after the message. This is the ONLY difference between
+    --   0x01 = Keccak-256 (original Keccak, e.g. Ethereum, "Keccak-256" online tools)
+    --   0x06 = SHA3-256   (NIST FIPS 202 standard: same Keccak, 2 extra domain bits)
+    constant PAD_BYTE : std_logic_vector(7 downto 0) := x"01";
+
+    -- first (and only) block: message bytes, then PAD_BYTE, zeros, and 0x80 at byte 135
+    -- (rate = 136 bytes; the other 64 bytes of the state start at 0)
     function load_block(m : std_logic_vector(511 downto 0); len_in : natural) return k_state is
         variable blk : std_logic_vector(1599 downto 0) := (others => '0');  -- byte i = bits 8i+7..8i
         variable s   : k_state;
@@ -1402,7 +1408,7 @@ architecture rtl of keccak_hash is
         end loop;
         for i in 0 to 64 loop
             if i = len then
-                blk(8 * i + 7 downto 8 * i) := x"06";                 -- SHA-3 padding start
+                blk(8 * i + 7 downto 8 * i) := PAD_BYTE;              -- padding start
             end if;
         end loop;
         blk(8 * 135 + 7 downto 8 * 135) := x"80";                     -- padding end
@@ -1501,7 +1507,7 @@ end rtl;
 --   0x2C-0x2F  R  tag        (16 bytes, rvalid = 0 while Poly1305 is busy)
 --   0x30-0x3F  W  message    (16 words = 64 bytes; only the first
 --                             "length" bytes are used)
---   Keccak / SHA3-256 (Parts 9-12)
+--   Keccak-256 (Parts 9-12)
 --   0x40-0x4F  W  message    (16 words = 64 bytes; only the first
 --                             "length" bytes are used)
 --   0x50       W  message length in bytes (0..64)
@@ -1531,7 +1537,7 @@ entity crypto_accel is
         -- control (1-clock pulses)
         start_chacha : in  std_logic;                      -- encrypt one block
         start_poly   : in  std_logic;                      -- compute one Poly1305 tag
-        start_keccak : in  std_logic;                      -- compute one SHA3-256 digest
+        start_keccak : in  std_logic;                      -- compute one Keccak-256 digest
         busy         : out std_logic                       -- 1 while any unit is computing
     );
 end crypto_accel;

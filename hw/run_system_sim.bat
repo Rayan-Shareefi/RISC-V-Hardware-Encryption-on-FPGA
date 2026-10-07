@@ -1,7 +1,7 @@
 @echo off
 rem ===========================================================================
 rem run_system_sim.bat - simulate the whole FPGA design (CPU + crypto hardware)
-rem running the C program that was last built with "make image" in
+rem running the C program that was last built with "make APP=crypto_hw_test clean exe image" in
 rem neorv32-main\sw\example\demo_blink_led. The UART output (what Tera Term
 rem would show) is saved to hw\sim_build_system\uart0.log.
 rem Simulates 400 ms of real time; this takes a few minutes.
@@ -31,7 +31,7 @@ call "%VIVADO_BIN%\xvhdl.bat" --2008 -work neorv32 ^
   %CORE%\neorv32_pwm.vhd %CORE%\neorv32_trng.vhd %CORE%\neorv32_neoled.vhd %CORE%\neorv32_gptmr.vhd ^
   %CORE%\neorv32_onewire.vhd %CORE%\neorv32_slink.vhd %CORE%\neorv32_tracer.vhd %CORE%\neorv32_sysinfo.vhd ^
   %CORE%\neorv32_debug_dtm.vhd %CORE%\neorv32_debug_auth.vhd %CORE%\neorv32_debug_dm.vhd ^
-  %CORE%\neorv32_top.vhd %CORE%\neorv32_cache_ram.vhd %APP%\neorv32_imem_image.vhd ^
+  %CORE%\neorv32_top.vhd %CORE%\neorv32_cache_ram.vhd %APP%\sim_neorv32_imem_image.vhd ^
   %CORE%\neorv32_imem_rom.vhd %CORE%\neorv32_imem_ram.vhd %CORE%\neorv32_dmem_ram.vhd ^
   %CORE%\neorv32_bootrom_image.vhd %CORE%\neorv32_bootrom_rom.vhd ^
   ..\..\Projects\Simple-Code\Simple-Code.srcs\sources_1\imports\test_setups\neorv32_test_setup_approm.vhd ^

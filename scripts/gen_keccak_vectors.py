@@ -1,12 +1,16 @@
 """
-gen_keccak_vectors.py  -  make the SHA3-256 (Keccak) test vectors for the RISC-V programs
+gen_keccak_vectors.py  -  make the Keccak-256 test vectors for the RISC-V programs
 
-1) Reference: Python's hashlib.sha3_256 (OpenSSL, independent of our C/VHDL),
-   checked first against the official NIST example digests.
-2) Named messages: the NIST examples, plus "Hello my keccak" (the pk/ test).
-3) Every message length 0..64 bytes (the size the hardware handles) and lengths
-   around the 136-byte block size (multi-block messages, software only).
-4) Writes keccak_vectors.h for the C programs.
+The project uses Keccak-256 = the original Keccak (padding byte 0x01), as used by
+Ethereum and by "Keccak-256" online tools. (SHA3-256, FIPS 202, is the same Keccak
+with padding byte 0x06.)
+
+1) Reference: Keccak-f[1600] written directly from the Keccak specification in
+   Python (independent of our C and VHDL code). It is checked twice:
+   - with padding 0x06 it must equal Python's hashlib.sha3_256 (lengths 0..300)
+   - with padding 0x01 it must give the known Keccak-256 values below
+2) Named messages + every length 0..64 (hardware size) + multi-block lengths.
+3) Writes keccak_vectors.h (C) and hw/tb_keccak_vectors_pkg.vhd (VHDL testbench).
 
 Run:  python scripts/gen_keccak_vectors.py
 """
@@ -16,27 +20,73 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "neorv32-main" / "sw" / "example" / "demo_blink_led" / "keccak_vectors.h"
 
-# NIST SHA3-256 example values (csrc.nist.gov, "Cryptographic Standards and Guidelines: Examples")
-NIST = [
-    ("NIST SHA3-256 empty message", b"",
-     "a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a"),
-    ("NIST SHA3-256 \\\"abc\\\"", b"abc",
-     "3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532"),
-]
-for name, msg, digest in NIST:
-    assert hashlib.sha3_256(msg).hexdigest() == digest, name
-print(f"hashlib matches the {len(NIST)} NIST example digests")
+# ---- reference Keccak-f[1600] (Keccak specification) ------------------------
+RC = [0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
+      0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
+      0x000000000000008A, 0x0000000000000088, 0x0000000080008009, 0x000000008000000A,
+      0x000000008000808B, 0x800000000000008B, 0x8000000000008089, 0x8000000000008003,
+      0x8000000000008002, 0x8000000000000080, 0x000000000000800A, 0x800000008000000A,
+      0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008]
+ROT = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]]
+M64 = (1 << 64) - 1
 
-vectors = [(name, msg) for name, msg, _ in NIST] + [
-    ("NIST 448-bit message", b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
-    ("NIST 896-bit message", b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn"
-                             b"hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"),
+
+def rol(v, n):
+    return ((v << n) | (v >> (64 - n))) & M64 if n else v
+
+
+def keccak_f(a):                                  # a[x][y], 25 lanes of 64 bits
+    for rnd in range(24):
+        c = [a[x][0] ^ a[x][1] ^ a[x][2] ^ a[x][3] ^ a[x][4] for x in range(5)]
+        d = [c[(x - 1) % 5] ^ rol(c[(x + 1) % 5], 1) for x in range(5)]
+        a = [[a[x][y] ^ d[x] for y in range(5)] for x in range(5)]                   # theta
+        b = [[0] * 5 for _ in range(5)]
+        for x in range(5):
+            for y in range(5):
+                b[y][(2 * x + 3 * y) % 5] = rol(a[x][y], ROT[x][y])                   # rho + pi
+        a = [[b[x][y] ^ ((~b[(x + 1) % 5][y]) & b[(x + 2) % 5][y]) for y in range(5)] for x in range(5)]  # chi
+        a[0][0] ^= RC[rnd]                                                           # iota
+    return a
+
+
+def keccak256(msg: bytes, pad: int = 0x01) -> bytes:
+    """pad = 0x01: Keccak-256 (original), pad = 0x06: SHA3-256"""
+    rate = 136
+    p = bytearray(msg) + bytes([pad]) + bytes((-len(msg) - 1) % rate)
+    p[-1] |= 0x80
+    a = [[0] * 5 for _ in range(5)]
+    for off in range(0, len(p), rate):
+        for i in range(rate // 8):
+            a[i % 5][i // 5] ^= int.from_bytes(p[off + 8 * i: off + 8 * i + 8], "little")
+        a = keccak_f(a)
+    return b"".join(a[i % 5][i // 5].to_bytes(8, "little") for i in range(4))
+
+
+# ---- check the reference ----------------------------------------------------
+pat = bytes((5 * i + 3) & 0xFF for i in range(300))
+for n in range(301):
+    assert keccak256(pat[:n], 0x06) == hashlib.sha3_256(pat[:n]).digest(), f"SHA3 mode wrong at length {n}"
+KNOWN = [  # published Keccak-256 values (Ethereum keccak256 / online Keccak-256 tools)
+    (b"", "c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"),
+    (b"test", "9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658"),
+]
+for m, h in KNOWN:
+    assert keccak256(m).hex() == h, m
+print("reference: equals hashlib SHA3-256 for lengths 0..300 (padding 0x06) and the known Keccak-256 values")
+
+# ---- vectors ------------------------------------------------------------------
+vectors = [
+    ("Keccak-256 empty message", b""),
+    ("Keccak-256 \\\"test\\\"", b"test"),
+    ("Keccak-256 \\\"abc\\\"", b"abc"),
     ("pk test \\\"Hello my keccak\\\"", b"Hello my keccak"),
+    ("448-bit message", b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"),
+    ("896-bit message", b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn"
+                        b"hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"),
 ]
-
-PATTERN = bytes((5 * i + 3) & 0xFF for i in range(300))
+PATTERN = pat
 SWEEP_LENS = list(range(65))                       # hardware sizes
-BLOCK_LENS = [135, 136, 137, 271, 272, 273, 300]   # around the 136-byte rate (2-3 blocks)
+BLOCK_LENS = [135, 136, 137, 271, 272, 273, 300]   # around the 136-byte rate (2-3 blocks, software)
 
 
 def c_bytes(b):
@@ -46,12 +96,13 @@ def c_bytes(b):
 
 with OUT.open("w", newline="\n") as f:
     f.write("/* keccak_vectors.h - generated by scripts/gen_keccak_vectors.py, do not edit.\n"
-            " * SHA3-256 digests from Python hashlib (checked against NIST examples). */\n")
+            " * Keccak-256 (original Keccak, padding 0x01) digests from an independent Python\n"
+            " * reference (checked against hashlib SHA3-256 and known Keccak-256 values). */\n")
     f.write("#ifndef KECCAK_VECTORS_H\n#define KECCAK_VECTORS_H\n\n#include <stdint.h>\n\n")
     for k, (name, msg) in enumerate(vectors):
         f.write(f"/* {name} */\n")
         f.write(f"static const uint8_t kv{k}_msg[{max(len(msg), 1)}] = {{\n  {c_bytes(msg)}\n}};\n")
-        f.write(f"static const uint8_t kv{k}_dig[32] = {{\n  {c_bytes(hashlib.sha3_256(msg).digest())}\n}};\n\n")
+        f.write(f"static const uint8_t kv{k}_dig[32] = {{\n  {c_bytes(keccak256(msg))}\n}};\n\n")
     f.write("typedef struct { const char *name; const uint8_t *msg; uint32_t len; const uint8_t *digest; } keccak_vec_t;\n\n")
     f.write("static const keccak_vec_t KECCAK_VECTORS[] = {\n")
     for k, (name, msg) in enumerate(vectors):
@@ -63,7 +114,7 @@ with OUT.open("w", newline="\n") as f:
     f.write(f"#define KECCAK_NUM_LENS {len(lens)}\n")
     f.write("static const uint16_t KECCAK_LENS[KECCAK_NUM_LENS] = { " + ", ".join(map(str, lens)) + " };\n")
     f.write("static const uint8_t KECCAK_LEN_DIGESTS[KECCAK_NUM_LENS][32] = {\n")
-    f.write(",\n".join("  { " + c_bytes(hashlib.sha3_256(PATTERN[:n]).digest()).replace("\n  ", " ") + " }" for n in lens))
+    f.write(",\n".join("  { " + c_bytes(keccak256(PATTERN[:n])).replace("\n  ", " ") + " }" for n in lens))
     f.write("\n};\n\n#endif\n")
 print(f"wrote {OUT.relative_to(ROOT)}  ({len(vectors)} named messages, {len(SWEEP_LENS) + len(BLOCK_LENS)} lengths)")
 
@@ -80,8 +131,8 @@ hw_vecs += [(f"length {n}", PATTERN[:n]) for n in SWEEP_LENS]
 VHD = ROOT / "hw" / "tb_keccak_vectors_pkg.vhd"
 with VHD.open("w", newline="\n") as f:
     f.write("-- tb_keccak_vectors_pkg.vhd - generated by scripts/gen_keccak_vectors.py, do not edit.\n"
-            "-- SHA3-256 test vectors for the hardware testbench (messages up to 64 bytes):\n"
-            "-- NIST examples, the pk/ test message, and every length 0..64 (Python hashlib).\n"
+            "-- Keccak-256 (original Keccak, padding 0x01) test vectors for the hardware testbench\n"
+            "-- (messages up to 64 bytes): named messages and every length 0..64.\n"
             "-- Byte order: byte 0 is in bits 7..0.\n")
     f.write("library ieee;\nuse ieee.std_logic_1164.all;\n\npackage tb_keccak_vectors is\n\n")
     f.write("    type keccak_tv_t is record\n"
@@ -98,7 +149,7 @@ with VHD.open("w", newline="\n") as f:
         rows.append(f'        ("{name[:28]:<28}",\n'
                     f'         {len(msg)},\n'
                     f'         {slv(msg, 64)},\n'
-                    f'         {slv(hashlib.sha3_256(msg).digest(), 32)})')
+                    f'         {slv(keccak256(msg), 32)})')
     f.write(",\n".join(rows))
     f.write("\n    );\n\nend package;\n")
 print(f"wrote {VHD.relative_to(ROOT)}  ({len(hw_vecs)} vectors)")

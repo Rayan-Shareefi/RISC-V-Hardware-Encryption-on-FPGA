@@ -2,17 +2,16 @@
  * my_crypto.c  -  YOUR OWN TEST: edit the values below, build, upload, check online
  *
  * 1) Edit MY_MESSAGE / MY_KEY / MY_NONCE / MY_COUNTER / MY_POLY_KEY below.
- * 2) Build (VS Code: Terminal > Run Task > "Build program for Tera Term" > my_crypto,
- *    or in a terminal in this folder:  make APP=my_crypto clean exe )
+ * 2) Build: in a terminal in this folder type   make APP=my_crypto clean exe
  *    -> creates neorv32_exe.bin in this folder.
  * 3) Upload neorv32_exe.bin with Tera Term (bootloader: u, send file as binary, e).
  *
- * The board computes ChaCha20, Poly1305 and SHA3-256 once in software and once
+ * The board computes ChaCha20, Poly1305 and Keccak-256 once in software and once
  * in hardware and prints all inputs and results in hex, so you can check them:
  *   - ChaCha20: CyberChef "ChaCha" (key/nonce as UTF8 text, counter = MY_COUNTER, 20 rounds)
- *   - SHA3-256: any SHA3-256 tool, e.g. emn178.github.io/online-tools/sha3_256.html
- *   - Keccak-256 (original Keccak padding, as used by Ethereum) is also printed (software
- *     only) to show why a "Keccak-256" tool gives a different hash than SHA3-256.
+ *   - Keccak-256: emn178.github.io/online-tools/keccak_256.html (input: the message)
+ *   - SHA3-256 is also printed (software only) to show why a "SHA3-256" tool gives
+ *     a different hash: same Keccak, only the padding byte differs (0x06 instead of 0x01).
  */
 #include <neorv32.h>
 #include <string.h>
@@ -38,21 +37,22 @@ _Static_assert(sizeof(MY_POLY_KEY) - 1 == 32, "MY_POLY_KEY must be exactly 32 ch
 
 #define MSG_LEN (sizeof(MY_MESSAGE) - 1)
 
-/* original Keccak-256 (pre-standard padding 0x01 instead of SHA3's 0x06), software only */
-static void keccak256_original(const uint8_t *msg, uint32_t len, uint8_t digest[32]) {
+/* SHA3-256 (NIST FIPS 202) = the same Keccak with padding 0x06 instead of 0x01, software only,
+   printed only to show why a SHA3-256 online tool gives a different hash than Keccak-256 */
+static void sha3_256_compare(const uint8_t *msg, uint32_t len, uint8_t digest[32]) {
   uint64_t A[25];
   uint8_t  block[136];
   memset(A, 0, sizeof A);
   memset(block, 0, sizeof block);
   memcpy(block, msg, len);                 /* len <= 64 < 136: one block */
-  block[len] ^= 0x01;                      /* SHA3-256 would put 0x06 here */
+  block[len] ^= 0x06;                      /* Keccak-256 puts 0x01 here */
   block[135] ^= 0x80;
   for (int i = 0; i < 17; i++) {
     uint64_t w = 0;
     for (int b = 7; b >= 0; b--) w = (w << 8) | block[8 * i + b];
     A[i] ^= w;
   }
-  keccak_f1600(A);                         /* the same Keccak permutation as SHA3 */
+  keccak_f1600(A);                         /* the same Keccak permutation */
   for (int i = 0; i < 32; i++) digest[i] = (uint8_t)(A[i / 8] >> (8 * (i % 8)));
 }
 
@@ -124,23 +124,23 @@ int main(void) {
     neorv32_uart0_printf("  %s\n", po_ok ? "PASS: software == hardware" : "FAIL");
     ok &= po_ok;
 
-    /* SHA3-256 of the message */
-    neorv32_uart0_printf("\n[SHA3-256] hash of the message (Keccak with the FIPS 202 padding 0x06)\n");
+    /* Keccak-256 of the message */
+    neorv32_uart0_printf("\n[Keccak-256] hash of the message (original Keccak, padding 0x01)\n");
     leds(LED_SW);
-    MEASURE(sha3_256(msg, MSG_LEN, dig));
+    MEASURE(keccak256(msg, MSG_LEN, dig));
     line("Software: ", dig, 32);
     leds(LED_HW);
-    MEASURE(sha3_256_hw(msg_w, MSG_LEN, dig_w));
+    MEASURE(keccak256_hw(msg_w, MSG_LEN, dig_w));
     line("Hardware: ", (const uint8_t *)dig_w, 32);
     int ke_ok = (memcmp(dig, dig_w, 32) == 0);
     neorv32_uart0_printf("  %s\n", ke_ok ? "PASS: software == hardware" : "FAIL");
     ok &= ke_ok;
 
-    neorv32_uart0_printf("\n[Keccak-256, original padding 0x01 - software only, for comparison]\n");
-    MEASURE(keccak256_original(msg, MSG_LEN, dig));
+    neorv32_uart0_printf("\n[SHA3-256, padding 0x06 - software only, for comparison]\n");
+    MEASURE(sha3_256_compare(msg, MSG_LEN, dig));
     line("Software: ", dig, 32);
-    neorv32_uart0_printf("  Same Keccak-f[1600] rounds as SHA3-256, only the padding byte differs,\n");
-    neorv32_uart0_printf("  so a \"Keccak-256\" online tool gives this value, a \"SHA3-256\" tool the one above.\n");
+    neorv32_uart0_printf("  Same Keccak-f[1600] rounds as Keccak-256, only the padding byte differs,\n");
+    neorv32_uart0_printf("  so a \"SHA3-256\" online tool gives this value, a \"Keccak-256\" tool the one above.\n");
 
     neorv32_uart0_printf(ok ? "\nALL CHECKS PASSED\n" : "\n*** SOME CHECKS FAILED ***\n");
     leds(ok ? LED_PASS : LED_FAIL);

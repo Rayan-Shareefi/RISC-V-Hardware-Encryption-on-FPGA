@@ -9,7 +9,7 @@
  *  [4] Results         time (1 us counter), cycles, speedup
  *
  * LEDs: LD1 = software running, LD2 = hardware running, RGB green/red = result.
- * Output: UART0 19200 baud (Tera Term or hw/upload.ps1 -Interactive).
+ * Output: UART0 19200 baud (Tera Term, COM3). Build: make APP=demo_chacha20 clean exe
  */
 #include <neorv32.h>
 #include <string.h>

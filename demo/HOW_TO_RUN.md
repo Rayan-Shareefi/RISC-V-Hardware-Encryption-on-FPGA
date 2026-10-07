@@ -1,92 +1,114 @@
-# How to run the demos
+# How to run the project yourself: Vivado → VS Code → Tera Term
 
-Everything for a demo is in this folder:
+You work with **two files**:
 
-> To build the files **yourself** (Vivado → VS Code → Tera Term) and test **your own** message, key and nonce, see **`DO_IT_YOURSELF.md`**.
+| File | You make it with | It goes to | What it is |
+|---|---|---|---|
+| **`neorv32_test_setup_approm.bit`** (bitstream) | **Vivado** (Generate Bitstream) | Vivado → *Program Device* | The **hardware**: the RISC-V CPU + the ChaCha20, Poly1305 and Keccak circuits |
+| **`neorv32_exe.bin`** (program) | **VS Code** (you type a `make` command) | **Tera Term** → bootloader | The **software**: the C program the CPU runs |
 
-| File | What it is |
-|---|---|
-| `neorv32_crypto.bit` | FPGA bitstream: RISC-V CPU + ChaCha20/Poly1305/Keccak hardware (the final design) |
-| `neorv32_crypto_fastcpu.bit` | The same design, but the CPU has a fast multiplier and shifter. Used for the "fair comparison" (`results/fastcpu_comparison.txt`) |
-| `demo_chacha20.bin` | Demo 1: ChaCha20 encryption, software vs hardware |
-| `demo_chacha20_poly1305.bin` | Demo 2: ChaCha20 + Poly1305 (encrypt + authenticate) |
-| `demo_keccak.bin` | Demo 3: SHA3-256 hashing, software vs hardware |
-| `my_crypto.bin` | Your own test, built from `my_crypto.c` with its current values |
-| `crypto_hw_test.bin` | Quick self-test of all hardware units (about 2 s) |
-| `build_demos.bat` | Rebuilds all the `.bin` files above |
-| `build_program.bat NAME` | Builds one program into `neorv32_exe.bin` for Tera Term |
+This is the same as your old counter test (counter = 0..7): Vivado loads the hardware, then the
+program file you built is sent with Tera Term, and the output appears in Tera Term.
 
-Every demo runs these steps live on the board:
-1. **Official test**: the RFC/NIST example is computed in software and in hardware and compared with the published answer.
-2. **Your message**: type a message (or wait 20 s for the default one). Each demo does something different with it:
-   - Demo 1 encrypts and decrypts it.
-   - Demo 2 makes a tag, then changes 1 bit to show the change is **rejected**.
-   - Demo 3 hashes it, then changes 1 bit to show about half of the hash changes.
-3. **Benchmark**: 1000 runs in software, then 1000 in hardware, with live progress bars. Then every run is checked: software == hardware.
-4. **Results**: time (hardware 1 µs counter), cycles, and the speedup.
+Vivado's *Program Device* window also lists `.bin` files. `neorv32_exe.bin` is **not** a bitstream:
+in Vivado always pick the **`.bit`**.
 
-**LEDs:**
-- LD1 is on while the software runs, and LD2 is on while the hardware runs.
-- At the end the RGB LED turns **green** if all checks passed and **red** if any failed.
+All the crypto hardware is in **one VHDL file: `hw\crypto_accel.vhd`**. It holds:
+- Part 1: ChaCha20
+- Parts 2-8: Poly1305
+- Parts 9-12: Keccak-256
+- Part 13: the register interface used by the CPU's custom instructions
 
-Demo 3 takes about 1 minute, because the Keccak software is slow on this small CPU.
+The Vivado project uses this file.
 
 ---
 
-## Step 0: load the FPGA (once after every power-up), in Vivado
+## 1. Vivado: make the hardware and load it into the FPGA
 
-1. Plug in the Cmod A7 (USB).
-2. In Vivado, choose **Open Hardware Manager → Open Target → Auto Connect**.
-3. Choose **Program Device**, set the bitstream file to `demo\neorv32_crypto.bit` (leave the probes file empty), and click **Program**.
+1. Open Vivado → open `D:\Graduation-Project\Projects\Simple-Code\Simple-Code.xpr`.
+2. Flow Navigator → **PROGRAM AND DEBUG → Generate Bitstream**.
+   - This runs synthesis + implementation by itself and takes about 8–10 minutes.
+   - Wait for *Bitstream Generation successfully completed*.
+3. Plug in the Cmod A7. Flow Navigator → **Open Hardware Manager → Open Target → Auto Connect**.
+4. **Program Device** → *Bitstream file*:
+   `D:\Graduation-Project\Projects\Simple-Code\Simple-Code.runs\impl_1\neorv32_test_setup_approm.bit` → **Program**.
 
-The FPGA forgets this when the power is off, so repeat it after every power-up.
+The FPGA forgets the bitstream when it loses power. After unplugging, repeat step 3–4 (no need to generate it again).
+`demo\neorv32_crypto.bit` is a backup copy of the same bitstream, in case you need it quickly.
 
-## A) Tera Term
+## 2. VS Code: build the program file (`neorv32_exe.bin`)
 
-1. **Setup → Serial port:** COM3, 19200 baud, 8 data bits, no parity, 1 stop bit, no flow control.
-2. **Setup → Terminal → New-line → Receive: AUTO** (or LF), so the progress bars redraw on one line.
-3. Press **BTN0** (reset) on the board. The bootloader prints `Auto-boot in 8s. Press any key to abort.` Press any key **within 8 seconds**.
-4. Type **`u`**. It answers `Awaiting neorv32_exe.bin...`.
-5. Choose **File → Send file…**, tick **Binary**, and pick a demo, for example `demo\demo_keccak.bin`. Wait for `OK`.
-6. Type **`e`**. The demo starts. Type your message when it asks and press Enter.
-7. To run it again, press Enter. To run another demo, press BTN0 and repeat from step 3.
+1. VS Code → **File → Open Folder** → `D:\Graduation-Project`.
+2. Choose the program. Each one is a C file in `neorv32-main\sw\example\demo_blink_led\`:
 
-## B) VS Code
+   | Program (`APP=`) | What it does on the board |
+   |---|---|
+   | `my_crypto` | **Your own values**: edit `my_crypto.c` (message, ChaCha20 key/nonce/counter, Poly1305 key), runs ChaCha20 + Poly1305 + Keccak-256 once in SW and HW |
+   | `demo_chacha20` | ChaCha20: official test, your typed message, 1000-block SW vs HW benchmark |
+   | `demo_chacha20_poly1305` | Encrypt + MAC, tamper test, 1000-run SW vs HW benchmark |
+   | `demo_keccak` | Keccak-256: known values, your typed message, 1000-hash SW vs HW benchmark |
+   | `crypto_hw_test` | Quick self-test of all hardware units (about 2 s) |
 
-1. Open the folder `D:\Graduation-Project` in VS Code.
-2. **Close Tera Term**, because only one program can use COM3.
-3. Choose **Terminal → Run Task…** and pick one of these:
-   - `Demo 1: ChaCha20 - upload & run`
-   - `Demo 2: ChaCha20 + Poly1305 - upload & run`
-   - `Demo 3: Keccak SHA3-256 - upload & run`
-   - `Hardware self-test (all units) - upload & run`
-4. Press **BTN0** on the board. The task uploads the program and starts it.
-5. Everything appears in the VS Code terminal. Click into the terminal and type your message when asked. Press **Esc** to stop.
+3. **Terminal → New Terminal**, then type:
+   ```
+   cd neorv32-main\sw\example\demo_blink_led
+   make APP=my_crypto clean exe
+   ```
+   What the words mean:
+   - `make` runs the build rules in the `makefile`.
+   - `APP=my_crypto` chooses which C program to build (any name from the table).
+   - `clean` deletes the old build files.
+   - `exe` compiles the program and makes **`neorv32_exe.bin`**, the file for the bootloader.
 
-Other tasks:
-- `Build demo programs` rebuilds the `.bin` files after a C change.
-- `Simulate crypto cores` runs the VHDL testbench and takes a few seconds.
-- `Simulate whole CPU + crypto` runs the full-system simulation and takes about 15 minutes.
+   It works when the last line looks like `Executable (EXE): 13056 bytes @ 0x00000000 ...`.
+   The file is now `neorv32-main\sw\example\demo_blink_led\neorv32_exe.bin`.
 
-The same thing without VS Code, from a terminal in `D:\Graduation-Project`:
-```
-powershell -ExecutionPolicy Bypass -File hw\upload.ps1 -Exe demo\demo_keccak.bin -Interactive
-```
+## 3. Tera Term: send the program and run it
 
-## C) Vivado: watch the hardware working (simulation waveform)
+1. Tera Term → **Serial**, port **COM3** → *Setup → Serial port*: 19200 baud, 8 data bits, no parity, 1 stop bit, no flow control.
+   *Setup → Terminal → New-line → Receive: AUTO*, so the progress bars stay on one line.
+2. Press **BTN0** (reset) on the board. The bootloader prints `Auto-boot in 8s. Press any key to abort.` → press any key (within 8 s).
+3. Type **`u`**. It answers `Awaiting neorv32_exe.bin...`.
+4. **File → Send file…** → tick **Binary** → choose `neorv32_exe.bin` (from step 2) → wait for `OK`.
+5. Type **`e`**. The program starts. When it asks, type a message and press Enter.
 
-1. Open `Projects\Simple-Code\Simple-Code.xpr`.
-2. Choose **Flow Navigator → Simulation → Run Simulation → Run Behavioral Simulation**.
+To change something: edit the C file → `make APP=... clean exe` again → BTN0 → steps 2–5 again.
 
-The simulation top is `tb_crypto_accel`, and `hw\waves_crypto.tcl` loads automatically. When you run it:
-- The waveform window opens with the signals grouped: **ChaCha20 / Poly1305 / Keccak**.
-- The Tcl Console shows the PASS lines and `ALL TESTS PASSED` (19 tests).
+**LEDs:**
+- LD1 is on while the software runs, and LD2 is on while the hardware runs.
+- At the end the RGB LED turns green if all checks passed and red if any failed.
 
-To watch one block being computed, zoom in on a `start` pulse:
-- **ChaCha20:** `rnd` counts 0 → 9 (one double round per clock), then `done` = 1, which is 10 cycles.
-- **Poly1305:** `state` goes SETUP → WAIT_CORE for each 16-byte block, then FINAL. A 64-byte message takes 90 cycles.
-- **Keccak:** `round_cnt` counts 0 → 23 (one round per clock), then `done` = 1, which is 24 cycles.
-- The inputs (`key`, `data_in`, `ke_msg`, …) and outputs (`data_out`, `po_tag`, `ke_digest`) are shown in hex.
+## 4. Check the results online yourself
+
+The programs print every input and result in **hex**. Hex is simply how bytes are written: each byte is 2 hex digits (00–ff).
+- Encrypted data and hashes look random on purpose, so turning them into text gives unreadable characters.
+- That is correct. Only **decrypting** with the same key, nonce and counter gives the text back.
+
+**ChaCha20, with CyberChef** (gchq.github.io/CyberChef), operation **"ChaCha"**. Rounds: 20.
+
+| Field | `demo_chacha20`, `demo_chacha20_poly1305` | `my_crypto` |
+|---|---|---|
+| Key | Hex `000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f` | UTF8: the `MY_KEY` text |
+| Nonce | Hex `000000000000004a00000000` | UTF8: the `MY_NONCE` text |
+| Counter | **1** (CyberChef starts at 0!) | `MY_COUNTER` |
+
+- **Encrypt:** set Input = Raw and Output = Hex, then type the message. The result must equal the board's ciphertext.
+- **Decrypt:** set Input = **Hex** and Output = **Raw**, then paste the board's ciphertext hex. The original message comes back.
+- Example from the demos: "Hello ChaCha20" gives `6a2a3d9f2f3b9a894e9d4f0e8a53`.
+- Some other sites (for example devglan) use a different ChaCha20 variant and give different numbers. Use CyberChef.
+
+**Keccak-256:** emn178.github.io/online-tools/keccak_256.html. Type the same message; it must equal the board's Keccak-256 line.
+Example: "test" gives `9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658`.
+
+**Why not SHA3-256?**
+- SHA3-256 (the NIST standard) is the same Keccak, but with padding byte 0x06 instead of 0x01, so its hash is different.
+- The project uses **Keccak-256**: `PAD_BYTE` in `hw\crypto_accel.vhd` Part 12, and `KECCAK_PAD` in `keccak_sw.c`.
+
+## 5. Optional: watch the hardware in the Vivado simulator
+
+In Vivado: **Run Simulation → Run Behavioral Simulation**.
+- The waveform opens with ChaCha20 / Poly1305 / Keccak signal groups, and the Tcl Console shows `ALL TESTS PASSED`.
+- Zoom in on a `start` pulse: ChaCha20's `rnd` counts 0..9, and Keccak's `round_cnt` counts 0..23 (one round per clock).
 
 ---
 
@@ -94,8 +116,8 @@ To watch one block being computed, zoom in on a `start` pulse:
 
 | Problem | Fix |
 |---|---|
-| No bootloader text after BTN0 | Check the COM port / 19200 baud; program the FPGA again (Step 0) |
-| `Access to the port 'COM3' is denied` (VS Code / script) | Close Tera Term |
-| Demo prints `Custom crypto instructions (CFU): NO` | The board has an old bitstream: do Step 0 with `demo\neorv32_crypto.bit` |
+| No bootloader text after BTN0 | Check COM3 / 19200 baud; program the FPGA again (step 1.3–1.4) |
+| Program prints `Custom crypto instructions (CFU): NO` | Old bitstream on the board: program the new `.bit` (step 1) |
 | Upload says `ERROR_CHECKSUM` | Send the file again with **Binary** ticked |
-| Changed C code but the board runs the old version | Run `build_demos.bat` (not while Vivado is building), then upload again |
+| `make: command not found` | Open a new VS Code terminal (the RISC-V tools and make must be on PATH) |
+| Build error `MY_KEY must be exactly 32 characters` | Fix the length in `my_crypto.c` (key 32, nonce 12, message 1..64 characters) |

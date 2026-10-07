@@ -1,17 +1,18 @@
 Small CPU vs fast CPU - same crypto hardware, 1000 runs each, Cmod A7-35T @ 12 MHz (2026-10-08)
+(Keccak row re-measured with Keccak-256 padding 0x01; ChaCha20/Poly1305 rows unchanged.)
 Small CPU = final design (demo/neorv32_crypto.bit): serial multiplier + serial shifter (lightweight).
 Fast CPU  = demo/neorv32_crypto_fastcpu.bit: CPU_FAST_MUL_EN (DSP multiplier) + CPU_FAST_SHIFT_EN
-            (barrel shifter). The divider stays serial in both. Same C programs (demo/*.bin).
+            (barrel shifter). The divider stays serial in both. Same C programs (make APP=demo_... clean exe).
 
 Cycles per run (time = cycles / 12 MHz)       Small CPU            Fast CPU
                                               SW      HW   Speedup  SW      HW   Speedup
 ChaCha20 (64-byte block)                      20104   287   69.8x   8568    287   29.8x   (same demo build)
 Poly1305 (64-byte message)                    13323   370   35.9x   4367    370   11.8x
 Encrypt + MAC (ChaCha20 + Poly1305)           33412   631   52.9x   12920   631   20.4x
-SHA3-256 (64-byte message)                    297977  250  1188.7x  186893  250  745.6x
+Keccak-256 (64-byte message)                  297977  253  1174.7x  186893  253  736.8x
 
 The hardware cycles do not change (the accelerator does the work); only the software gets faster.
-Even against the faster CPU, the accelerator is 12x to 746x faster.
+Even against the faster CPU, the accelerator is 12x to 737x faster.
 
 FPGA resources                                Small CPU            Fast CPU
 Slice LUTs (of 20800)                         11857 (57.0%)        11895 (57.2%)   +38
