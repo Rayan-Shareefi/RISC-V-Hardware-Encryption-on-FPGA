@@ -7,7 +7,9 @@
  *    the same 4 tests as hw/tb_crypto_accel.vhd).
  * 2) Poly1305: the RFC 8439 vectors that fit in 64 bytes and every message
  *    length 0..64 (poly1305_vectors.h, same as hw/tb_crypto_accel.vhd).
- * 3) Checks the 1 microsecond counter against the CPU cycle counter.
+ * 3) Keccak / SHA3-256: NIST examples + pk/ test message (<= 64 bytes) and
+ *    every message length 0..64 (keccak_vectors.h, Phase 8).
+ * 4) Checks the 1 microsecond counter against the CPU cycle counter.
  *
  * Short and fast, so it is also used for the full-system simulation
  * (hw/run_system_sim.bat). Output: UART0 at 19200 baud (Tera Term, COM3).
@@ -17,6 +19,7 @@
 #include <string.h>
 #include "crypto_accel.h"
 #include "poly1305_vectors.h"
+#include "keccak_vectors.h"
 
 #define BAUD_RATE 19200
 
@@ -159,6 +162,39 @@ static int test_poly1305_hw(void) {
   return (bad_rfc != 0) + (bad_len != 0);
 }
 
+/* Keccak hardware: named messages (<= 64 bytes) + every length 0..64, return number of failures */
+static int test_keccak_hw(void) {
+  uint32_t msg[16], d[8];
+  uint32_t nnamed = 0, bad_named = 0, bad_len = 0, c64 = 0;
+
+  for (unsigned v = 0; v < KECCAK_NUM_VECTORS; v++) {
+    if (KECCAK_VECTORS[v].len > 64) continue;          /* the hardware takes up to 64 bytes */
+    memset(msg, 0, 64);
+    memcpy(msg, KECCAK_VECTORS[v].msg, KECCAK_VECTORS[v].len);
+    sha3_256_hw(msg, KECCAK_VECTORS[v].len, d);
+    nnamed++;
+    if (memcmp(d, KECCAK_VECTORS[v].digest, 32) != 0) {
+      neorv32_uart0_printf("FAIL  SHA3-256 %s\n", KECCAK_VECTORS[v].name);
+      bad_named++;
+    }
+  }
+  neorv32_uart0_printf("%s  SHA3-256 %u NIST/pk messages (<= 64 bytes)\n", bad_named ? "FAIL" : "PASS", nnamed);
+
+  memcpy(msg, KECCAK_PATTERN, 64);
+  for (unsigned k = 0; k < KECCAK_NUM_LENS; k++) {
+    uint32_t n = KECCAK_LENS[k];
+    if (n > 64) continue;
+    uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
+    sha3_256_hw(msg, n, d);
+    uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
+    if (n == 64) c64 = c1 - c0;
+    bad_len += (memcmp(d, KECCAK_LEN_DIGESTS[k], 32) != 0);
+  }
+  neorv32_uart0_printf("%s  SHA3-256 every length 0..64 bytes, %u wrong (64 bytes: %u cycles)\n",
+                       bad_len ? "FAIL" : "PASS", bad_len, c64);
+  return (bad_named != 0) + (bad_len != 0);
+}
+
 int main(void) {
   neorv32_rte_setup();
   neorv32_uart0_setup(BAUD_RATE, 0);
@@ -173,6 +209,7 @@ int main(void) {
   while (1) {
     int fails = test_chacha20_hw();
     fails += test_poly1305_hw();
+    fails += test_keccak_hw();
     fails += test_us_counter();
     if (fails == 0) {
       neorv32_uart0_printf("ALL TESTS PASSED\n");

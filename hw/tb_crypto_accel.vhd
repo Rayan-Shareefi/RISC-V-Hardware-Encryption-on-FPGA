@@ -15,6 +15,10 @@
 -- 64 bytes (2.5.2, A.3 #1, #5-#11, incl. the h >= p edge cases) and every
 -- message length 0..64. Also checks done low on start, done + tag stable after.
 --
+-- Keccak / SHA3-256 tests (tb_keccak_vectors_pkg.vhd, made by
+-- scripts/gen_keccak_vectors.py): NIST examples, the pk/ test message and
+-- every message length 0..64. Also checks the 24-cycle latency.
+--
 -- Prints PASS/FAIL per test and a final summary.
 -- File type in Vivado: VHDL 2008
 -- ============================================================================
@@ -24,6 +28,7 @@ use ieee.numeric_std.all;
 
 library work;
 use work.tb_poly1305_vectors.all;
+use work.tb_keccak_vectors.all;
 
 entity tb_crypto_accel is
 end tb_crypto_accel;
@@ -129,6 +134,13 @@ architecture sim of tb_crypto_accel is
     signal po_tag   : std_logic_vector(127 downto 0);
     signal po_done  : std_logic;
 
+    -- Keccak DUT signals
+    signal ke_start  : std_logic := '0';
+    signal ke_msg    : std_logic_vector(511 downto 0) := (others => '0');
+    signal ke_len    : std_logic_vector(6 downto 0)   := (others => '0');
+    signal ke_digest : std_logic_vector(255 downto 0);
+    signal ke_done   : std_logic;
+
     signal sim_done : boolean := false;
 
 begin
@@ -166,6 +178,17 @@ begin
             msg_len => po_len,
             tag     => po_tag,
             done    => po_done
+        );
+
+    dut_keccak : entity work.keccak_hash
+        port map (
+            clk     => clk,
+            rst     => rst,
+            start   => ke_start,
+            msg     => ke_msg,
+            msg_len => ke_len,
+            digest  => ke_digest,
+            done    => ke_done
         );
 
     stim : process
@@ -288,9 +311,50 @@ begin
             end if;
         end procedure;
 
+        -- one SHA3-256 digest; returns ok and the latency (start edge -> done)
+        procedure run_keccak(tv : keccak_tv_t; variable ok : out boolean; variable cycles : out natural) is
+            variable n : natural := 0;
+        begin
+            ok := true;
+            wait until rising_edge(clk);
+            ke_msg   <= tv.msg;
+            ke_len   <= std_logic_vector(to_unsigned(tv.len, 7));
+            ke_start <= '1';
+            wait until rising_edge(clk);           -- circuit samples start here
+            ke_start <= '0';
+            ke_msg   <= (others => '0');           -- inputs may change after start
+            wait for 1 ns;
+            if ke_done /= '0' then
+                report tv.name & ": done did not go low after start" severity error;
+                ok := false;
+            end if;
+            loop
+                wait until rising_edge(clk);
+                wait for 1 ns;
+                n := n + 1;
+                exit when ke_done = '1' or n > 1000;
+            end loop;
+            cycles := n;
+            if ke_digest /= tv.digest then
+                report tv.name & ": WRONG digest" & LF &
+                       "   got      " & hex(ke_digest) & LF &
+                       "   expected " & hex(tv.digest) severity error;
+                ok := false;
+            end if;
+            for i in 1 to 3 loop
+                wait until rising_edge(clk);
+            end loop;
+            wait for 1 ns;
+            if ke_done /= '1' or ke_digest /= tv.digest then
+                report tv.name & ": done/digest did not stay stable" severity error;
+                ok := false;
+            end if;
+        end procedure;
+
         variable p_ok     : boolean;
         variable p_cycles : natural;
         variable sweep_bad : natural := 0;
+        variable k_bad     : natural := 0;
 
     begin
         -- reset for a few clocks
@@ -335,6 +399,34 @@ begin
             passed := passed + 1;
         else
             report "FAIL  Poly1305 lengths 0..64: " & integer'image(sweep_bad) & " wrong" severity error;
+            errors := errors + 1;
+        end if;
+
+        -- Keccak: named messages, one line each
+        for v in 0 to KECCAK_NUM_NAMED - 1 loop
+            run_keccak(KECCAK_TVS(v), p_ok, p_cycles);
+            if p_ok and p_cycles = 24 then
+                report "PASS  SHA3-256 " & KECCAK_TVS(v).name & " (" & integer'image(KECCAK_TVS(v).len) &
+                       " bytes, " & integer'image(p_cycles) & " cycles)" severity note;
+                passed := passed + 1;
+            else
+                report "FAIL  SHA3-256 " & KECCAK_TVS(v).name & " (" & integer'image(p_cycles) & " cycles)" severity error;
+                errors := errors + 1;
+            end if;
+        end loop;
+
+        -- Keccak: every message length 0..64, one summary line
+        for v in KECCAK_NUM_NAMED to KECCAK_TVS'high loop
+            run_keccak(KECCAK_TVS(v), p_ok, p_cycles);
+            if not p_ok or p_cycles /= 24 then
+                k_bad := k_bad + 1;
+            end if;
+        end loop;
+        if k_bad = 0 then
+            report "PASS  SHA3-256 every message length 0..64 bytes (24 cycles each)" severity note;
+            passed := passed + 1;
+        else
+            report "FAIL  SHA3-256 lengths 0..64: " & integer'image(k_bad) & " wrong" severity error;
             errors := errors + 1;
         end if;
 

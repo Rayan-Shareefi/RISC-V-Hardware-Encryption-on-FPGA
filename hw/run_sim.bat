@@ -12,7 +12,7 @@ cd /d "%~dp0"
 if not exist sim_build mkdir sim_build
 cd sim_build
 
-call "%VIVADO_BIN%\xvhdl.bat" --2008 ..\crypto_accel.vhd ..\tb_poly1305_vectors_pkg.vhd ..\tb_crypto_accel.vhd || goto :fail
+call "%VIVADO_BIN%\xvhdl.bat" --2008 ..\crypto_accel.vhd ..\tb_poly1305_vectors_pkg.vhd ..\tb_keccak_vectors_pkg.vhd ..\tb_crypto_accel.vhd || goto :fail
 call "%VIVADO_BIN%\xelab.bat" tb_crypto_accel -s tb_sim -debug typical || goto :fail
 call "%VIVADO_BIN%\xsim.bat" tb_sim -R || goto :fail
 goto :end

@@ -68,8 +68,10 @@ SECTIONS
     KEEP (*(.fini_array EXCLUDE_FILE (*crtbegin.o *crtbegin?.o *crtend.o *crtend?.o ) .dtors))
     PROVIDE_HIDDEN(__fini_array_end = .);
 
-    /* finish section on WORD boundary */
-    . = ALIGN(4);
+    /* finish section on DOUBLE-WORD boundary (graduation project fix): image_gen
+       appends .rodata directly after .text, so there must be no alignment gap
+       even when .rodata needs 8-byte alignment (uint64_t constants) */
+    . = ALIGN(8);
     PROVIDE(__text_end = .);
   } > rom
 
@@ -83,10 +85,14 @@ SECTIONS
     /* constant data like strings */
     *(.rodata .rodata* .rodata.* .gnu.linkonce.r.*)
 
-    /* finish section on WORD boundary */
-    . = ALIGN(4);
+    /* finish section on DOUBLE-WORD boundary (graduation project fix, see .text) */
+    . = ALIGN(8);
     PROVIDE(__rodata_end = .);
   } > rom
+
+  /* image_gen copies .text, .rodata and .data back-to-back: stop the build if there is a gap */
+  ASSERT(ADDR(.rodata) == ADDR(.text) + SIZEOF(.text), "gap between .text and .rodata: the executable would be corrupted")
+  ASSERT(LOADADDR(.data) == ADDR(.rodata) + SIZEOF(.rodata), "gap between .rodata and .data: the executable would be corrupted")
 
 /* ************************************************************************************************* */
 /* Section ".data" - pre-initialized variables                                                       */

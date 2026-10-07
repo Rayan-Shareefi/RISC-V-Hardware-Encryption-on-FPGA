@@ -672,6 +672,14 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../../hw/tb_keccak_vectors_pkg.vhd">
+        <FileInfo SFType="VHDL2008">
+          <Attr Name="Library" Val="neorv32"/>
+          <Attr Name="AutoDisabled" Val="1"/>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PSRCDIR/sim_1/imports/sim/sim_uart_rx.vhd">
         <FileInfo>
           <Attr Name="Library" Val="neorv32"/>

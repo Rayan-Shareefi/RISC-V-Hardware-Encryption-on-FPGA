@@ -9,6 +9,7 @@
  *   funct3 = 001  crypto.write rs1, rs2  register[rs1] = rs2
  *   funct3 = 010  crypto.read  rd, rs1   rd = register[rs1] (waits until ready)
  *   funct3 = 011  poly.start             start Poly1305 on the loaded message
+ *   funct3 = 100  keccak.start           start SHA3-256 on the loaded message
  */
 #ifndef CRYPTO_ACCEL_H
 #define CRYPTO_ACCEL_H
@@ -21,6 +22,7 @@
 #define CRYPTO_WRITE(idx, val)  RISCV_INSTR_R_TYPE(RISCV_OPCODE_CUSTOM0, 0b001, 0b0000000, (idx), (val))
 #define CRYPTO_READ(idx)        RISCV_INSTR_R_TYPE(RISCV_OPCODE_CUSTOM0, 0b010, 0b0000000, (idx), 0)
 #define POLY_START()            RISCV_INSTR_R_TYPE(RISCV_OPCODE_CUSTOM0, 0b011, 0b0000000, 0, 0)
+#define KECCAK_START()          RISCV_INSTR_R_TYPE(RISCV_OPCODE_CUSTOM0, 0b100, 0b0000000, 0, 0)
 
 /* ---- register map (see crypto_accel in hw/crypto_accel.vhd) ---- */
 #define CH_KEY      0x00  /* 8 words, write-only            */
@@ -33,6 +35,10 @@
 #define PO_STATUS   0x29  /* bit 0 = done, bit 1 = busy     */
 #define PO_TAG      0x2C  /* 4 words (16-byte tag), read    */
 #define PO_MSG      0x30  /* 16 words: message              */
+#define KE_MSG      0x40  /* 16 words: message              */
+#define KE_LEN      0x50  /* message length in bytes (0..64) */
+#define KE_STATUS   0x51  /* bit 0 = done, bit 1 = busy     */
+#define KE_DIGEST   0x58  /* 8 words (32-byte digest), read */
 
 /* ---- 1 microsecond counter (CFS) ---- */
 #define US_COUNTER  (NEORV32_CFS->REG[0])  /* read: microseconds, write: set value */
@@ -102,6 +108,28 @@ static inline void poly1305_hw_mac64(const uint32_t key[8], const uint32_t msg[1
   POLY_START();
   #pragma GCC unroll 4
   for (int i = 0; i < 4; i++) tag[i] = CRYPTO_READ(PO_TAG + i);
+}
+
+/*
+ * SHA3-256 digest of a message of len bytes (0..64) with the hardware.
+ * msg must hold (len + 3) / 4 words (only these are sent); digest = 8 words.
+ */
+static inline void sha3_256_hw(const uint32_t *msg, uint32_t len, uint32_t digest[8]) {
+  for (uint32_t i = 0; i < (len + 3) / 4; i++) CRYPTO_WRITE(KE_MSG + i, msg[i]);
+  CRYPTO_WRITE(KE_LEN, len);
+  KECCAK_START();
+  #pragma GCC unroll 8
+  for (int i = 0; i < 8; i++) digest[i] = CRYPTO_READ(KE_DIGEST + i);  /* first read waits for done */
+}
+
+/* the same for exactly 64 bytes, fully unrolled (fastest) */
+static inline void sha3_256_hw64(const uint32_t msg[16], uint32_t digest[8]) {
+  #pragma GCC unroll 16
+  for (int i = 0; i < 16; i++) CRYPTO_WRITE(KE_MSG + i, msg[i]);
+  CRYPTO_WRITE(KE_LEN, 64);
+  KECCAK_START();
+  #pragma GCC unroll 8
+  for (int i = 0; i < 8; i++) digest[i] = CRYPTO_READ(KE_DIGEST + i);
 }
 
 #endif /* CRYPTO_ACCEL_H */

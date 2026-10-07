@@ -11,6 +11,7 @@
 --   funct3 = 010  crypto.read  rd, rs1    rd = register[rs1]                       --
 --                                         (CPU waits here until the result is ready) --
 --   funct3 = 011  poly.start              start Poly1305 on the loaded message     --
+--   funct3 = 100  keccak.start            start SHA3-256 on the loaded message     --
 -- Any other funct3/funct7 -> illegal instruction exception.                        --
 -- Register map: see crypto_accel in hw/crypto_accel.vhd.                           --
 -- C macros: crypto_accel.h in the application folder.                              --
@@ -54,6 +55,7 @@ architecture neorv32_cpu_alu_cfu_rtl of neorv32_cpu_alu_cfu is
   constant op_write_c        : std_ulogic_vector(2 downto 0) := "001";
   constant op_read_c         : std_ulogic_vector(2 downto 0) := "010";
   constant op_poly_start_c   : std_ulogic_vector(2 downto 0) := "011";
+  constant op_keccak_start_c : std_ulogic_vector(2 downto 0) := "100";
 
   -- instruction decoder --
   signal is_crypto : std_ulogic; -- CUSTOM-0 opcode with funct7 = 0
@@ -62,6 +64,7 @@ architecture neorv32_cpu_alu_cfu_rtl of neorv32_cpu_alu_cfu is
   -- accelerator interface --
   signal acc_we, acc_start : std_logic;
   signal acc_start_poly     : std_logic;
+  signal acc_start_keccak   : std_logic;
   signal raddr_buf         : std_ulogic_vector(7 downto 0); -- read address, kept while the CPU waits
   signal acc_raddr         : std_logic_vector(7 downto 0);
   signal acc_rdata         : std_logic_vector(31 downto 0);
@@ -78,6 +81,7 @@ begin
   acc_start <= '1' when (start_i = '1') and (is_crypto = '1') and (funct3 = op_chacha_start_c) else '0';
   acc_we    <= '1' when (start_i = '1') and (is_crypto = '1') and (funct3 = op_write_c) else '0';
   acc_start_poly <= '1' when (start_i = '1') and (is_crypto = '1') and (funct3 = op_poly_start_c) else '0';
+  acc_start_keccak <= '1' when (start_i = '1') and (is_crypto = '1') and (funct3 = op_keccak_start_c) else '0';
 
   -- read address: rs1 in the first cycle, then the buffered copy while the CPU waits --
   raddr_buffer: process(rstn_i, clk_i)
@@ -108,6 +112,7 @@ begin
     rvalid       => acc_rvalid,
     start_chacha => acc_start,
     start_poly   => acc_start_poly,
+    start_keccak => acc_start_keccak,
     busy         => acc_busy
   );
 
@@ -120,7 +125,7 @@ begin
     valid_o  <= '0'; -- default: not a valid instruction -> illegal instruction exception
     if (is_crypto = '1') then
       case funct3 is
-        when op_chacha_start_c | op_write_c | op_poly_start_c => -- single cycle
+        when op_chacha_start_c | op_write_c | op_poly_start_c | op_keccak_start_c => -- single cycle
           valid_o <= '1';
         when op_read_c => -- wait until the result is ready
           result_o <= std_ulogic_vector(acc_rdata);
