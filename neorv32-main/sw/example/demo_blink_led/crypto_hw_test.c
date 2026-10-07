@@ -1,16 +1,22 @@
 /*
- * chacha20_hw_test.c  -  Phase 3: test the ChaCha20 hardware on the RISC-V
+ * crypto_hw_test.c  -  test all crypto hardware units on the RISC-V
+ * (was chacha20_hw_test.c in Phase 3; Poly1305 added in Phase 7)
  *
- * 1) Encrypts 4 blocks with the custom instructions and compares the result
+ * 1) ChaCha20: encrypts 4 blocks with the custom instructions and compares
  *    with the expected ciphertext (RFC 8439 test vectors + the project-1 test,
  *    the same 4 tests as hw/tb_crypto_accel.vhd).
- * 2) Checks the 1 microsecond counter against the CPU cycle counter.
+ * 2) Poly1305: the RFC 8439 vectors that fit in 64 bytes and every message
+ *    length 0..64 (poly1305_vectors.h, same as hw/tb_crypto_accel.vhd).
+ * 3) Checks the 1 microsecond counter against the CPU cycle counter.
  *
- * Output: UART0 at 19200 baud (Tera Term, COM3). Press any key to run again.
+ * Short and fast, so it is also used for the full-system simulation
+ * (hw/run_system_sim.bat). Output: UART0 at 19200 baud (Tera Term, COM3).
+ * Press any key to run again.
  */
 #include <neorv32.h>
 #include <string.h>
 #include "crypto_accel.h"
+#include "poly1305_vectors.h"
 
 #define BAUD_RATE 19200
 
@@ -120,11 +126,44 @@ static int test_us_counter(void) {
   return !ok;
 }
 
+/* Poly1305 hardware: RFC vectors (<= 64 bytes) + every length 0..64, return number of failures */
+static int test_poly1305_hw(void) {
+  uint32_t key[8], msg[16], tag[4];
+  uint32_t nrfc = 0, bad_rfc = 0, bad_len = 0, c64 = 0;
+
+  for (unsigned v = 0; v < POLY_NUM_VECTORS; v++) {
+    if (POLY_VECTORS[v].len > 64) continue;           /* the hardware takes up to 64 bytes */
+    memcpy(key, POLY_VECTORS[v].key, 32);
+    memset(msg, 0, 64);
+    memcpy(msg, POLY_VECTORS[v].msg, POLY_VECTORS[v].len);
+    poly1305_hw_mac(key, msg, POLY_VECTORS[v].len, tag);
+    nrfc++;
+    if (memcmp(tag, POLY_VECTORS[v].tag, 16) != 0) {
+      neorv32_uart0_printf("FAIL  Poly1305 %s\n", POLY_VECTORS[v].name);
+      bad_rfc++;
+    }
+  }
+  neorv32_uart0_printf("%s  Poly1305 %u RFC 8439 vectors (<= 64 bytes)\n", bad_rfc ? "FAIL" : "PASS", nrfc);
+
+  memcpy(key, POLY_VECTORS[0].key, 32);
+  memcpy(msg, SWEEP_MSG, 64);
+  for (uint32_t n = 0; n <= 64; n++) {
+    uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
+    poly1305_hw_mac(key, msg, n, tag);
+    uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
+    if (n == 64) c64 = c1 - c0;
+    bad_len += (memcmp(tag, SWEEP_TAGS[n], 16) != 0);
+  }
+  neorv32_uart0_printf("%s  Poly1305 every length 0..64 bytes, %u wrong (64 bytes: %u cycles)\n",
+                       bad_len ? "FAIL" : "PASS", bad_len, c64);
+  return (bad_rfc != 0) + (bad_len != 0);
+}
+
 int main(void) {
   neorv32_rte_setup();
   neorv32_uart0_setup(BAUD_RATE, 0);
 
-  neorv32_uart0_printf("\n=== ChaCha20 hardware test (custom instructions) ===\n");
+  neorv32_uart0_printf("\n=== Crypto hardware test (custom instructions) ===\n");
 
   if ((neorv32_cpu_csr_read(CSR_MXISA) & (1 << CSR_MXISA_XCFU)) == 0) {
     neorv32_uart0_printf("ERROR: CFU (custom instructions) not implemented!\n");
@@ -133,6 +172,7 @@ int main(void) {
 
   while (1) {
     int fails = test_chacha20_hw();
+    fails += test_poly1305_hw();
     fails += test_us_counter();
     if (fails == 0) {
       neorv32_uart0_printf("ALL TESTS PASSED\n");

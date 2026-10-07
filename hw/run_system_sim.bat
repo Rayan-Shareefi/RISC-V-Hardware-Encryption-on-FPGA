@@ -4,7 +4,7 @@ rem run_system_sim.bat - simulate the whole FPGA design (CPU + crypto hardware)
 rem running the C program that was last built with "make image" in
 rem neorv32-main\sw\example\demo_blink_led. The UART output (what Tera Term
 rem would show) is saved to hw\sim_build_system\uart0.log.
-rem Simulates 300 ms of real time; this takes a few minutes.
+rem Simulates 400 ms of real time; this takes a few minutes.
 rem ===========================================================================
 setlocal
 set VIVADO_BIN=D:\Graduation-Project\2025.2\Vivado\bin
@@ -38,7 +38,7 @@ call "%VIVADO_BIN%\xvhdl.bat" --2008 -work neorv32 ^
   || goto :fail
 call "%VIVADO_BIN%\xvhdl.bat" --2008 %SIMSRC%\sim_uart_rx.vhd ..\tb_system.vhd || goto :fail
 call "%VIVADO_BIN%\xelab.bat" tb_system -s sys_sim -L neorv32 || goto :fail
-echo run 300 ms > run.tcl
+echo run 400 ms > run.tcl
 echo quit >> run.tcl
 call "%VIVADO_BIN%\xsim.bat" sys_sim -tclbatch run.tcl > xsim_console.txt || goto :fail
 echo.

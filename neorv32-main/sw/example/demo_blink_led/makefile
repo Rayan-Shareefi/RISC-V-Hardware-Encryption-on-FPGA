@@ -24,9 +24,10 @@ USER_FLAGS += -Wl,--defsym,__neorv32_ram_size=8k
 
 # Program to build (each program has its own main()), choose it with APP:
 #   make clean elf asm exe bin coe mem mif image                       -> chacha20_bench.c
-#   make APP=chacha20_hw_test clean elf asm exe bin coe mem mif image  -> chacha20_hw_test.c
+#   make APP=crypto_hw_test clean elf asm exe bin coe mem mif image    -> crypto_hw_test.c
 #   make APP=poly1305_bench ...                                         -> poly1305_bench.c
 #   make APP=keccak_bench ...                                           -> keccak_bench.c
+#   make APP=chacha20_poly1305_bench ...                                -> chacha20_poly1305_bench.c
 APP ?= chacha20_bench
 APP_SRC = $(APP).c chacha20_sw.c poly1305_sw.c keccak_sw.c
 

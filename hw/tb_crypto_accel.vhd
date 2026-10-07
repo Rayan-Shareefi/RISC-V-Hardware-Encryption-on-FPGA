@@ -10,12 +10,20 @@
 -- For every test it also checks: done goes low on start, busy is high while
 -- computing, the latency, and that done + data_out stay stable afterwards.
 --
+-- Poly1305 tests (tb_poly1305_vectors_pkg.vhd, made by
+-- scripts/gen_poly1305_vectors.py): the official RFC 8439 vectors that fit in
+-- 64 bytes (2.5.2, A.3 #1, #5-#11, incl. the h >= p edge cases) and every
+-- message length 0..64. Also checks done low on start, done + tag stable after.
+--
 -- Prints PASS/FAIL per test and a final summary.
 -- File type in Vivado: VHDL 2008
 -- ============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+
+library work;
+use work.tb_poly1305_vectors.all;
 
 entity tb_crypto_accel is
 end tb_crypto_accel;
@@ -113,6 +121,14 @@ architecture sim of tb_crypto_accel is
     signal busy     : std_logic;
     signal done     : std_logic;
 
+    -- Poly1305 DUT signals
+    signal po_start : std_logic := '0';
+    signal po_key   : std_logic_vector(255 downto 0) := (others => '0');
+    signal po_msg   : std_logic_vector(511 downto 0) := (others => '0');
+    signal po_len   : std_logic_vector(6 downto 0)   := (others => '0');
+    signal po_tag   : std_logic_vector(127 downto 0);
+    signal po_done  : std_logic;
+
     signal sim_done : boolean := false;
 
 begin
@@ -138,6 +154,18 @@ begin
             data_out => data_out,
             busy     => busy,
             done     => done
+        );
+
+    dut_poly : entity work.poly1305_mac
+        port map (
+            clk     => clk,
+            rst     => rst,
+            start   => po_start,
+            key     => po_key,
+            msg     => po_msg,
+            msg_len => po_len,
+            tag     => po_tag,
+            done    => po_done
         );
 
     stim : process
@@ -218,6 +246,52 @@ begin
             end if;
         end procedure;
 
+        -- one Poly1305 tag; returns ok and the latency (start edge -> done)
+        procedure run_poly(tv : poly_tv_t; variable ok : out boolean; variable cycles : out natural) is
+            variable n : natural := 0;
+        begin
+            ok := true;
+            wait until rising_edge(clk);
+            po_key   <= tv.key;
+            po_msg   <= tv.msg;
+            po_len   <= std_logic_vector(to_unsigned(tv.len, 7));
+            po_start <= '1';
+            wait until rising_edge(clk);           -- circuit samples start here
+            po_start <= '0';
+            po_key   <= (others => '0');           -- inputs may change after start
+            po_msg   <= (others => '0');
+            wait for 1 ns;
+            if po_done /= '0' then
+                report tv.name & ": done did not go low after start" severity error;
+                ok := false;
+            end if;
+            loop
+                wait until rising_edge(clk);
+                wait for 1 ns;
+                n := n + 1;
+                exit when po_done = '1' or n > 1000;
+            end loop;
+            cycles := n;
+            if po_tag /= tv.tag then
+                report tv.name & ": WRONG tag" & LF &
+                       "   got      " & hex(po_tag) & LF &
+                       "   expected " & hex(tv.tag) severity error;
+                ok := false;
+            end if;
+            for i in 1 to 3 loop
+                wait until rising_edge(clk);
+            end loop;
+            wait for 1 ns;
+            if po_done /= '1' or po_tag /= tv.tag then
+                report tv.name & ": done/tag did not stay stable" severity error;
+                ok := false;
+            end if;
+        end procedure;
+
+        variable p_ok     : boolean;
+        variable p_cycles : natural;
+        variable sweep_bad : natural := 0;
+
     begin
         -- reset for a few clocks
         rst <= '1';
@@ -234,6 +308,35 @@ begin
                  text64(SUNSCREEN(65 to SUNSCREEN'length)), EXP_242_2);
         run_test("Project-1 test (key 0, Hello my chacha20)", (others => '0'), (others => '0'), 1,
                  text64("Hello my chacha20"), EXP_PROJECT1);
+
+        -- Poly1305: official RFC vectors, one line each
+        for v in 0 to POLY_NUM_RFC - 1 loop
+            run_poly(POLY_TVS(v), p_ok, p_cycles);
+            if p_ok then
+                report "PASS  Poly1305 " & POLY_TVS(v).name & " (" & integer'image(POLY_TVS(v).len) &
+                       " bytes, " & integer'image(p_cycles) & " cycles)" severity note;
+                passed := passed + 1;
+            else
+                report "FAIL  Poly1305 " & POLY_TVS(v).name severity error;
+                errors := errors + 1;
+            end if;
+        end loop;
+
+        -- Poly1305: every message length 0..64, one summary line
+        for v in POLY_NUM_RFC to POLY_TVS'high loop
+            run_poly(POLY_TVS(v), p_ok, p_cycles);
+            if not p_ok then
+                sweep_bad := sweep_bad + 1;
+            end if;
+        end loop;
+        if sweep_bad = 0 then
+            report "PASS  Poly1305 every message length 0..64 bytes (64 bytes: " &
+                   integer'image(p_cycles) & " cycles)" severity note;
+            passed := passed + 1;
+        else
+            report "FAIL  Poly1305 lengths 0..64: " & integer'image(sweep_bad) & " wrong" severity error;
+            errors := errors + 1;
+        end if;
 
         report "==== SUMMARY: " & integer'image(passed) & " passed, " &
                integer'image(errors) & " failed ====" severity note;
