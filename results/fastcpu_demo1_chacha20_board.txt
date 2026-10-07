@@ -1,0 +1,47 @@
+Demo 1: ChaCha20 (older demo file, still printing the simple-driver row) - FAST CPU bitstream (demo/neorv32_crypto_fastcpu.bit: CPU_FAST_MUL_EN + CPU_FAST_SHIFT_EN), Cmod A7-35T 12 MHz, 2026-10-08
+Raw UART output (progress lines show their final state):
+
+=================================================================
+ DEMO 1: ChaCha20 encryption - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official test: RFC 8439 section 2.4.2, block 1
+  Key:        000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+  Nonce:      000000000000004a00000000   Counter: 1
+  Plaintext:  "Ladies and Gentlemen of the class of '99: If I could offer you o"
+  Expected:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  (first 32 of 64 bytes)
+  Software:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (8562 cycles)
+  Hardware:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (875 cycles)
+
+[2] Your message
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > fast cpu test
+  Plaintext:        "fast cpu test"  (13 bytes)
+  Ciphertext (SW):  442e22876078a9940faa421ccc
+  Ciphertext (HW):  442e22876078a9940faa421ccc
+  Ciphertext as text (unreadable = encrypted): "D.".`x....B.."
+  Software == hardware: YES   (hardware took 833 cycles)
+  Decrypted by HW:  "fast cpu test"  = original message
+
+[3] Benchmark: encrypt 1000 blocks of 64 bytes (64,000 bytes)
+  LD1 = software running, LD2 = hardware running
+  SW           [####################] 1000/1000  714.059 ms   
+  HW (simple) [####################] 1000/1000  73.973 ms   
+  HW (fast)   [####################] 1000/1000  24.025 ms   
+  Checking SW == HW: 1000/1000 blocks, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Software            714.059 ms   8568290 cycles   8568 cycles/run
+  Hardware (simple)   73.973 ms   887290 cycles   887 cycles/run
+  Hardware (fast)     24.025 ms   287851 cycles   287 cycles/run
+  Speedup (simple driver): 9.7x faster in hardware
+  Speedup (fast driver)  : 29.8x faster in hardware
+  The ChaCha20 hardware core itself needs 10 cycles per block;
+  the rest is the CPU moving 64 bytes in and 64 bytes out.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.

@@ -2,14 +2,19 @@
 
 Everything for a demo is in this folder:
 
+> To build the files **yourself** (Vivado → VS Code → Tera Term) and test **your own** message, key and nonce, see **`DO_IT_YOURSELF.md`**.
+
 | File | What it is |
 |---|---|
-| `neorv32_crypto.bit` | FPGA bitstream: RISC-V CPU + ChaCha20/Poly1305/Keccak hardware |
+| `neorv32_crypto.bit` | FPGA bitstream: RISC-V CPU + ChaCha20/Poly1305/Keccak hardware (the final design) |
+| `neorv32_crypto_fastcpu.bit` | The same design, but the CPU has a fast multiplier and shifter. Used for the "fair comparison" (`results/fastcpu_comparison.txt`) |
 | `demo_chacha20.bin` | Demo 1: ChaCha20 encryption, software vs hardware |
 | `demo_chacha20_poly1305.bin` | Demo 2: ChaCha20 + Poly1305 (encrypt + authenticate) |
 | `demo_keccak.bin` | Demo 3: SHA3-256 hashing, software vs hardware |
+| `my_crypto.bin` | Your own test, built from `my_crypto.c` with its current values |
 | `crypto_hw_test.bin` | Quick self-test of all hardware units (about 2 s) |
-| `build_demos.bat` | Rebuilds the `.bin` files after a C change |
+| `build_demos.bat` | Rebuilds all the `.bin` files above |
+| `build_program.bat NAME` | Builds one program into `neorv32_exe.bin` for Tera Term |
 
 Every demo runs these steps live on the board:
 1. **Official test**: the RFC/NIST example is computed in software and in hardware and compared with the published answer.

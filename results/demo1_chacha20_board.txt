@@ -1,5 +1,4 @@
-Demo 1: ChaCha20 - board run on the Cmod A7-35T (12 MHz), 2026-10-07, uploaded with hw/upload.ps1 -Type (typed message)
-Typed-message results checked independently in Python (ChaCha20/Poly1305 from the RFC formulas, SHA3 from hashlib): all match.
+Demo 1: ChaCha20 - board run on the Cmod A7-35T (12 MHz), 2026-10-08, final demo version (hardware row only), uploaded with hw/upload.ps1 -Type
 Raw UART output (COM3, 19200 baud; progress lines show their final state):
 
 =================================================================
@@ -13,8 +12,8 @@ Raw UART output (COM3, 19200 baud; progress lines show their final state):
   Nonce:      000000000000004a00000000   Counter: 1
   Plaintext:  "Ladies and Gentlemen of the class of '99: If I could offer you o"
   Expected:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  (first 32 of 64 bytes)
-  Software:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (20098 cycles)
-  Hardware:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (875 cycles)
+  Software:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (20097 cycles)
+  Hardware:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (888 cycles)
 
 [2] Your message
   Type a message (up to 64 characters) and press Enter,
@@ -29,17 +28,14 @@ Raw UART output (COM3, 19200 baud; progress lines show their final state):
 
 [3] Benchmark: encrypt 1000 blocks of 64 bytes (64,000 bytes)
   LD1 = software running, LD2 = hardware running
-  SW           [####################] 1000/1000  1675.391 ms   
-  HW (simple) [####################] 1000/1000  73.974 ms   
-  HW (fast)   [####################] 1000/1000  24.022 ms   
+  SW [####################] 1000/1000  1675.141 ms   
+  HW [####################] 1000/1000  23.858 ms   
   Checking SW == HW: 1000/1000 blocks, 0 differences    PASS
 
 [4] Results: time from first input to last output (1 us counter)
-  Software            1675.391 ms   20104290 cycles   20104 cycles/run
-  Hardware (simple)   73.974 ms   887290 cycles   887 cycles/run
-  Hardware (fast)     24.022 ms   287851 cycles   287 cycles/run
-  Speedup (simple driver): 22.7x faster in hardware
-  Speedup (fast driver)  : 69.8x faster in hardware
+  Software  1675.141 ms   20101290 cycles   20101 cycles/run
+  Hardware  23.858 ms   285859 cycles   285 cycles/run
+  Speedup ChaCha20: 70.3x faster in hardware
   The ChaCha20 hardware core itself needs 10 cycles per block;
   the rest is the CPU moving 64 bytes in and 64 bytes out.
 

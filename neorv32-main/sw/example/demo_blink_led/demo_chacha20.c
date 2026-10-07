@@ -4,6 +4,7 @@
  *  [1] Official test   RFC 8439 2.4.2 block 1 in software and hardware vs the RFC value
  *  [2] Your message    type a message: encrypted in SW and HW, then decrypted again
  *  [3] Benchmark       1000 blocks (64,000 bytes) in SW and in HW, live progress,
+ *                      (HW: key + nonce loaded once, then counter + data per block),
  *                      then all 1000 blocks checked: SW == HW
  *  [4] Results         time (1 us counter), cycles, speedup
  *
@@ -112,7 +113,7 @@ static meas_t run_sw(void) {
   meas_t total = {0, 0};
   bench_timer_t t;
   leds(LED_SW);
-  progress("SW          ", 0, RUNS, 0);
+  progress("SW", 0, RUNS, 0);
   for (uint32_t c = 0; c < RUNS; c += CHUNK) {
     bench_start(&t);
     for (uint32_t i = c; i < c + CHUNK; i++) {
@@ -120,39 +121,19 @@ static meas_t run_sw(void) {
       MEMORY_BARRIER();
     }
     meas_add(&total, bench_stop(&t));
-    progress("SW          ", c + CHUNK, RUNS, total.us);
+    progress("SW", c + CHUNK, RUNS, total.us);
   }
   neorv32_uart0_printf("\n");
   return total;
 }
 
-static meas_t run_hw_simple(void) {
+static meas_t run_hw(void) {
   static uint32_t in[16], out[16];
   meas_t total = {0, 0};
   bench_timer_t t;
   memcpy(in, RFC_PT, 64);
   leds(LED_HW);
-  progress("HW (simple)", 0, RUNS, 0);
-  for (uint32_t c = 0; c < RUNS; c += CHUNK) {
-    bench_start(&t);
-    for (uint32_t i = c; i < c + CHUNK; i++) {
-      chacha20_hw_block(key_w, nonce_w, 1 + i, in, out);
-      MEMORY_BARRIER();
-    }
-    meas_add(&total, bench_stop(&t));
-    progress("HW (simple)", c + CHUNK, RUNS, total.us);
-  }
-  neorv32_uart0_printf("\n");
-  return total;
-}
-
-static meas_t run_hw_fast(void) {
-  static uint32_t in[16], out[16];
-  meas_t total = {0, 0};
-  bench_timer_t t;
-  memcpy(in, RFC_PT, 64);
-  leds(LED_HW);
-  progress("HW (fast)  ", 0, RUNS, 0);
+  progress("HW", 0, RUNS, 0);
   for (uint32_t c = 0; c < RUNS; c += CHUNK) {
     bench_start(&t);
     if (c == 0) {
@@ -163,7 +144,7 @@ static meas_t run_hw_fast(void) {
       MEMORY_BARRIER();
     }
     meas_add(&total, bench_stop(&t));
-    progress("HW (fast)  ", c + CHUNK, RUNS, total.us);
+    progress("HW", c + CHUNK, RUNS, total.us);
   }
   neorv32_uart0_printf("\n");
   return total;
@@ -203,18 +184,15 @@ int main(void) {
 
     demo_step("3] Benchmark: encrypt 1000 blocks of 64 bytes (64,000 bytes)");
     neorv32_uart0_printf("  LD1 = software running, LD2 = hardware running\n");
-    meas_t sw  = run_sw();
-    meas_t hw1 = run_hw_simple();
-    meas_t hw2 = run_hw_fast();
+    meas_t sw = run_sw();
+    meas_t hw = run_hw();
     leds(LED_IDLE);
     fails += check_all();
 
     demo_step("4] Results: time from first input to last output (1 us counter)");
-    print_result("Software           ", sw, RUNS);
-    print_result("Hardware (simple)  ", hw1, RUNS);
-    print_result("Hardware (fast)    ", hw2, RUNS);
-    print_speedup("(simple driver)", sw, hw1);
-    print_speedup("(fast driver)  ", sw, hw2);
+    print_result("Software ", sw, RUNS);
+    print_result("Hardware ", hw, RUNS);
+    print_speedup("ChaCha20", sw, hw);
     neorv32_uart0_printf("  The ChaCha20 hardware core itself needs 10 cycles per block;\n");
     neorv32_uart0_printf("  the rest is the CPU moving 64 bytes in and 64 bytes out.\n");
 

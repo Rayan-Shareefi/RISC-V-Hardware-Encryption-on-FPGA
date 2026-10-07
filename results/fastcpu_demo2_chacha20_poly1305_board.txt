@@ -1,0 +1,50 @@
+Demo 2: ChaCha20 + Poly1305 - FAST CPU bitstream (demo/neorv32_crypto_fastcpu.bit: CPU_FAST_MUL_EN + CPU_FAST_SHIFT_EN), Cmod A7-35T 12 MHz, 2026-10-08
+Raw UART output (progress lines show their final state):
+
+=================================================================
+ DEMO 2: ChaCha20 + Poly1305 (Encrypt + MAC) - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official test: Poly1305, RFC 8439 section 2.5.2
+  Key:       85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b
+  Message:   "Cryptographic Forum Research Group"
+  Expected:  a8061dc1305136c6c22b8baf0c0127a9
+  Software:  a8061dc1305136c6c22b8baf0c0127a9  PASS  (3414 cycles)
+  Hardware:  a8061dc1305136c6c22b8baf0c0127a9  PASS  (372 cycles)
+
+[2] Your message: encrypt + authenticate
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > fast cpu test
+  Message:          "fast cpu test"  (13 bytes)
+  Ciphertext (HW):  442e22876078a9940faa421ccc
+  Tag (SW):         b5a9b0646f76fc5dac3d4f57f4678e1e
+  Tag (HW):         b5a9b0646f76fc5dac3d4f57f4678e1e
+  Software == hardware: YES   (hardware encrypt + tag: 1075 cycles)
+  Receiver, message unchanged:     tag matches -> ACCEPTED
+  Receiver, 1 bit changed:         new tag 3a806f6dc3cb69612882a165343d9526
+                                   tag differs -> REJECTED (tampering detected)
+
+[3] Benchmark: 1000 runs each (64-byte messages)
+  LD1 = software running, LD2 = hardware running
+  Poly1305 SW     [####################] 1000/1000  363.973 ms   
+  Poly1305 HW     [####################] 1000/1000  30.954 ms   
+  Encrypt+MAC SW  [####################] 1000/1000  1076.734 ms   
+  Encrypt+MAC HW  [####################] 1000/1000  52.700 ms   
+  Checking SW == HW: 1000/1000 runs, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Poly1305, software       363.973 ms   4367240 cycles   4367 cycles/run
+  Poly1305, hardware       30.954 ms   370840 cycles   370 cycles/run
+  Encrypt + MAC, software  1076.734 ms   12920290 cycles   12920 cycles/run
+  Encrypt + MAC, hardware  52.700 ms   631873 cycles   631 cycles/run
+  Speedup Poly1305     : 11.8x faster in hardware
+  Speedup Encrypt + MAC: 20.4x faster in hardware
+  Hardware cores alone: Poly1305 90 cycles (64 bytes), ChaCha20 10 cycles;
+  the rest is the CPU moving the data in and out.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.

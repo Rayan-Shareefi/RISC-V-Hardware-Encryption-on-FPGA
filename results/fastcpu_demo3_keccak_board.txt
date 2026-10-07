@@ -1,0 +1,50 @@
+Demo 3: Keccak / SHA3-256 - FAST CPU bitstream (demo/neorv32_crypto_fastcpu.bit: CPU_FAST_MUL_EN + CPU_FAST_SHIFT_EN), Cmod A7-35T 12 MHz, 2026-10-08
+Raw UART output (progress lines show their final state):
+
+=================================================================
+ DEMO 3: Keccak / SHA3-256 hashing - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official test: NIST SHA3-256 examples
+  Message:   "abc"
+  Expected:  3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532
+  Software:  3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532  PASS  (186665 cycles)
+  Hardware:  3a985da74fe225b2045c172d6bd390bd855f086e3e9d525b46bfe24511431532  PASS  (125 cycles)
+  Message:   "" (empty message)
+  Expected:  a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a
+  Software:  a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a  PASS  (186608 cycles)
+  Hardware:  a7ffc6f8bf1ed76651c14756a061d662f580ff4de43b49fa82d80a4b80f8434a  PASS  (127 cycles)
+
+[2] Your message
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > fast cpu test
+  Message:        "fast cpu test"  (13 bytes)
+  SHA3-256 (SW):  3223b12e0dab1e7a36389e59ce2fb7f676e9a9a82df532fb047e73cfc1f65c7e   186719 cycles
+  SHA3-256 (HW):  3223b12e0dab1e7a36389e59ce2fb7f676e9a9a82df532fb047e73cfc1f65c7e   197 cycles
+  Software == hardware: YES
+
+  Changed 1 bit:  "fast cpu tesu"
+  SHA3-256 (HW):  8688dbdabb7014e78392ab007b250aec6f7d43710b57f5339b8fe321fff98d30
+  135 of 256 hash bits changed (about half = good hash)
+
+[3] Benchmark: 1000 hashes of a 64-byte message
+  LD1 = software running, LD2 = hardware running
+  (software needs about 25 s - this CPU has no fast shifter for 64-bit rotations)
+  SW [####################] 1000/1000  15574.466 ms   
+  HW [####################] 1000/1000  20.940 ms   
+  (checking 1000 different messages also needs about 25 s of software)
+  Checking SW == HW: 1000/1000 messages, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Software  15574.466 ms   186893270 cycles   186893 cycles/run
+  Hardware  20.940 ms   250670 cycles   250 cycles/run
+  Speedup SHA3-256: 745.6x faster in hardware
+  The Keccak hardware core needs 24 cycles per hash (one round per clock);
+  the rest is the CPU moving 64 bytes in and 32 bytes out.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.
