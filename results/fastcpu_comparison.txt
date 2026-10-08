@@ -1,24 +1,25 @@
-Small CPU vs fast CPU - same crypto hardware, 1000 runs each, Cmod A7-35T @ 12 MHz (2026-10-08)
-(Keccak row re-measured 2026-10-08 with the FAST Keccak software (unrolled, fixed rotations);
- ChaCha20/Poly1305 rows unchanged.)
+Small CPU vs fast CPU - same crypto hardware, 1000 runs each, Cmod A7-35T @ 12 MHz
+(re-measured 2026-10-08 after Step C: long messages + RFC 8439 ChaCha20-Poly1305, fast Keccak software)
 Small CPU = final design (demo/neorv32_crypto.bit): serial multiplier + serial shifter (lightweight).
 Fast CPU  = demo/neorv32_crypto_fastcpu.bit: CPU_FAST_MUL_EN (DSP multiplier) + CPU_FAST_SHIFT_EN
             (barrel shifter). The divider stays serial in both. Same C programs (make APP=demo_... clean exe).
 
-Cycles per run (time = cycles / 12 MHz)       Small CPU            Fast CPU
-                                              SW      HW   Speedup  SW      HW   Speedup
-ChaCha20 (64-byte block)                      20104   287   69.8x   8568    287   29.8x   (same demo build)
-Poly1305 (64-byte message)                    13323   370   35.9x   4367    370   11.8x
-Encrypt + MAC (ChaCha20 + Poly1305)           33412   631   52.9x   12920   631   20.4x
-Keccak-256 (64-byte message)                  130461  253   514.3x  79665   253  314.1x
-  (old slow Keccak software, for history:      297977  253  1174.7x  186893  253  736.8x)
+Cycles per run (time = cycles / 12 MHz)            Small CPU                Fast CPU
+                                                   SW      HW    Speedup    SW      HW    Speedup
+ChaCha20 (64-byte block)                           20101   285    70.3x     8565    285    30.0x
+Poly1305 (64-byte message)                         13323   365    36.4x     4367    365    11.9x
+ChaCha20-Poly1305, RFC 8439 (64 B + 12 B AAD)      58197   2270   25.6x     22207   2236    9.9x
+Keccak-256 (64-byte message)                       130461  261   498.5x     79665   261   304.4x
 
 The hardware cycles do not change (the accelerator does the work); only the software gets faster.
-Even against the faster CPU, the accelerator is 12x to 314x faster.
+Even against the faster CPU, the accelerator is about 10x to 300x faster.
+(History: before Step C the 3rd row was "Encrypt + MAC" with a separate Poly1305 key:
+ 52.9x small / 20.4x fast; Keccak with the old slow software: 1174.7x / 736.8x.)
 
-FPGA resources                                Small CPU            Fast CPU
-Slice LUTs (of 20800)                         11857 (57.0%)        11895 (57.2%)   +38
-Slice Registers (of 41600)                    13901 (33.4%)        13930 (33.5%)   +29
-DSP slices (of 90)                            64    (71.1%)        68    (75.6%)   +4 (multiplier)
-Block RAM tiles (of 50)                       8                    8
-Timing slack @ 12 MHz                         +52.5 ns             +51.1 ns
+FPGA resources                                     Small CPU                Fast CPU
+Slice LUTs (of 20800)                              13991 (67.3%)            14029 (67.4%)   +38
+Slice Registers (of 41600)                         14492 (34.8%)            14521 (34.9%)   +29
+DSP slices (of 90)                                 64    (71.1%)            68    (75.6%)   +4 (multiplier)
+Block RAM tiles (of 50)                            12                       12
+Timing slack @ 12 MHz                              +53.3 ns                 +52.4 ns
+Board logs: stepC_demo*_board.txt (small CPU), stepC_fastcpu_demo*_board.txt (fast CPU).

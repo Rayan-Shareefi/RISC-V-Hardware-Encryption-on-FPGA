@@ -1,0 +1,21 @@
+Step C - FPGA resources after "long messages + RFC 8439 ChaCha20-Poly1305" (2026-10-08)
+Device: xc7a35tcpg236-1 (Cmod A7-35T), Vivado 2025.2, project impl_1 (synth + place + route), 12 MHz.
+
+                         Before (Phase 8)   Step C (now)       change
+Slice LUTs (of 20800)    11857 (57.0%)      13991 (67.3%)      +2134
+Slice Registers (41600)  13901 (33.4%)      14492 (34.8%)      +591
+DSP slices (90)          64    (71.1%)      64    (71.1%)      0
+Block RAM tiles (50)     8                  12                 +4  (IMEM 16 KB -> 32 KB)
+Timing slack @ 12 MHz    +52.5 ns           +53.3 ns           met
+
+crypto_accel (CFU) now: 11610 LUTs, 12910 FFs, 64 DSPs   (before: 9509 LUTs, 12316 FFs)
+  ChaCha20   2807 LUTs, 1030 FFs   (unchanged design)
+  Poly1305   3337 LUTs, 7253 FFs, 64 DSPs (+ init/final control, keeps h between pieces)
+  Keccak     5466 LUTs, 1864 FFs   (136-byte block buffer + XOR-absorb into the kept state,
+                                    padding position anywhere in 0..135: about +2100 LUTs)
+  registers  2763 FFs in the register file of crypto_accel (Keccak message now 34 words)
+
+Why: Keccak can now hash messages of any length (136-byte blocks, state kept between
+blocks) and Poly1305 can sign messages of any length (64-byte pieces, h kept), which
+the real ChaCha20-Poly1305 (RFC 8439 2.8) needs. The program memory was doubled to
+32 KB for the larger programs.

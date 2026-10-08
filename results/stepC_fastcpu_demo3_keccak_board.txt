@@ -1,0 +1,57 @@
+demo_keccak.c (FAST CPU bitstream demo/neorv32_crypto_fastcpu.bit, Step C hardware, 12 MHz, 2026-10-08)
+(only the last state of each progress bar is kept; in Tera Term it updates in place)
+
+=================================================================
+ DEMO 3: Keccak-256 hashing - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official test: Keccak-256 known values
+  Message:   "test"
+  Expected:  9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658
+  Software:  9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658  PASS  (79430 cycles)
+  Hardware:  9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658  PASS  (163 cycles)
+  Message:   "" (empty message)
+  Expected:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+  Software:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470  PASS  (79385 cycles)
+  Hardware:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470  PASS  (149 cycles)
+  Message:   300-byte test pattern (3 blocks of 136 bytes)
+  Expected:  d1f911f19818f8c71dcf9e8d01aa7f28691755661f0ca1e83173b014c2fc39b8
+  Software:  d1f911f19818f8c71dcf9e8d01aa7f28691755661f0ca1e83173b014c2fc39b8  PASS  (234960 cycles)
+  Hardware:  d1f911f19818f8c71dcf9e8d01aa7f28691755661f0ca1e83173b014c2fc39b8  PASS  (1034 cycles)
+
+[2] Your message
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > Hello
+  Message:        "Hello"  (5 bytes)
+  Keccak-256 (SW):  06b3dfaec148fb1bb2b066f10ec285e7c9bf402ab32aa78a5d38e34566810cd2   79450 cycles
+  Keccak-256 (HW):  06b3dfaec148fb1bb2b066f10ec285e7c9bf402ab32aa78a5d38e34566810cd2   207 cycles
+  Software == hardware: YES
+
+  Changed 1 bit:  "Helln"
+  Keccak-256 (HW):  8dfcb8d36099a44d2e9e43a0cf070fbc16fdcdfda10498adc6fc441c13049b4b
+  135 of 256 hash bits changed (about half = good hash)
+
+[3] Benchmark: 1000 hashes of a 64-byte message
+  LD1 = software running, LD2 = hardware running
+  (software needs about 11 s - this CPU has no fast shifter for 64-bit rotations)
+
+  SW [####################] 1000/1000  6638.800 ms
+
+  HW [####################] 1000/1000  21.850 ms
+  (checking 1000 different messages also needs about 11 s of software)
+
+  Checking SW == HW: 1000/1000 messages, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Software  6638.800 ms   79665270 cycles   79665 cycles/run
+  Hardware  21.850 ms   261690 cycles   261 cycles/run
+  Speedup Keccak-256: 304.4x faster in hardware
+  The Keccak hardware core needs 24 cycles per hash (one round per clock);
+  the rest is the CPU moving 64 bytes in and 32 bytes out.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.

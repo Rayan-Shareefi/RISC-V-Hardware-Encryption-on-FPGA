@@ -13,8 +13,8 @@ EFFORT = -O2
 # Add extended debug symbols
 USER_FLAGS += -ggdb -gdwarf-3
 
-# Adjust processor IMEM size
-USER_FLAGS += -Wl,--defsym,__neorv32_rom_size=16k
+# Adjust processor IMEM size (32 KB since Step C, must match IMEM_SIZE in the Vivado top file)
+USER_FLAGS += -Wl,--defsym,__neorv32_rom_size=32k
 
 # Adjust processor DMEM size
 USER_FLAGS += -Wl,--defsym,__neorv32_ram_size=8k

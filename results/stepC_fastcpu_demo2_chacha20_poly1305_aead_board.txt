@@ -1,0 +1,69 @@
+demo_chacha20_poly1305.c (FAST CPU bitstream demo/neorv32_crypto_fastcpu.bit, Step C hardware, 12 MHz, 2026-10-08)
+(only the last state of each progress bar is kept; in Tera Term it updates in place)
+
+=================================================================
+ DEMO 2: ChaCha20-Poly1305 (RFC 8439) - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official tests (RFC 8439)
+  a) Poly1305, section 2.5.2: message "Cryptographic Forum Research Group"
+     Expected tag:  a8061dc1305136c6c22b8baf0c0127a9
+     Software:      a8061dc1305136c6c22b8baf0c0127a9  PASS  (3417 cycles)
+     Hardware:      a8061dc1305136c6c22b8baf0c0127a9  PASS  (328 cycles)
+
+  b) ChaCha20-Poly1305, section 2.8.2 (114-byte message, 12-byte AAD)
+     Key:    808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f
+     Nonce:  070000004041424344454647   AAD: 50515253c0c1c2c3c4c5c6c7
+     Message: "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
+     Ciphertext (hardware):
+    d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d6
+    3dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b36
+    92ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc
+    3ff4def08e4b7a9de576d26586cec64b6116
+     Expected tag:  1ae10b594f09e26a7e902ecbd0600691
+     Software:      1ae10b594f09e26a7e902ecbd0600691  PASS  (ciphertext + tag, 34167 cycles)
+     Hardware:      1ae10b594f09e26a7e902ecbd0600691  PASS  (ciphertext + tag, 3185 cycles)
+
+[2] Your message: encrypt + authenticate
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > Hello
+  Message:          "Hello"  (5 bytes)
+  AAD (in clear):   "From: board 1"
+  Ciphertext (HW):
+    d71e85316e
+  Tag (SW):         8f45968ba2dba7d4d897c5281ab2ba76
+  Tag (HW):         8f45968ba2dba7d4d897c5281ab2ba76
+  Software == hardware: YES   (hardware encrypt + tag: 1870 cycles)
+  Receiver, message unchanged:  tag matches -> ACCEPTED, decrypted: "Hello"
+  Receiver, 1 bit changed:      tag differs -> REJECTED, nothing decrypted (tampering detected)
+
+[3] Benchmark: 1000 runs each (64-byte message, 12-byte AAD)
+  LD1 = software running, LD2 = hardware running
+
+  Poly1305 SW           [####################] 1000/1000  363.971 ms
+
+  Poly1305 HW           [####################] 1000/1000  30.533 ms
+
+  ChaCha20-Poly1305 SW  [####################] 1000/1000  1850.657 ms
+
+  ChaCha20-Poly1305 HW  [####################] 1000/1000  186.411 ms
+
+  Checking SW == HW: 1000/1000 messages, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Poly1305, software           363.971 ms   4367280 cycles   4367 cycles/run
+  Poly1305, hardware           30.533 ms   365790 cycles   365 cycles/run
+  ChaCha20-Poly1305, software  1850.657 ms   22207380 cycles   22207 cycles/run
+  ChaCha20-Poly1305, hardware  186.411 ms   2236330 cycles   2236 cycles/run
+  Speedup Poly1305         : 11.9x faster in hardware
+  Speedup ChaCha20-Poly1305: 9.9x faster in hardware
+  One ChaCha20-Poly1305 run = 2 ChaCha20 blocks (key + message) and Poly1305
+  over 96 bytes. Hardware cores alone: ChaCha20 10 cycles per block,
+  Poly1305 22 cycles per 16 bytes; the rest is the CPU moving the data.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.

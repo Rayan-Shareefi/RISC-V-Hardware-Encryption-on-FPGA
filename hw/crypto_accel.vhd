@@ -788,9 +788,17 @@ end Behavioral;
 --
 -- Byte order (same as the ChaCha20 circuit): byte 0 is in bits 7..0
 --   key(255:0)  : r = key bytes 0..15, s = key bytes 16..31
---   msg(511:0)  : message, up to 64 bytes
---   msg_len     : message length in bytes (0..64)
---   tag(127:0)  : 16-byte tag
+--   msg(511:0)  : message piece, up to 64 bytes
+--   msg_len     : piece length in bytes (0..64)
+--   init        : 1 = new message: h = 0 and the key is taken (first piece)
+--                 0 = continue: h and the key are kept from the previous piece
+--   final       : 1 = last piece: finish and make the tag
+--                 0 = more pieces follow: msg_len must be a multiple of 16
+--   tag(127:0)  : 16-byte tag (updated only by a final piece)
+--
+-- Long messages (added 2026-10-08 for ChaCha20-Poly1305, RFC 8439 2.8):
+-- send them in 64-byte pieces, init = 1 on the first, final = 1 on the last.
+-- init = final = 1 is a whole message in one piece (as before).
 --
 -- File type in Vivado: VHDL 2008
 -- ============================================================================
@@ -806,6 +814,8 @@ entity poly1305_mac is
         key     : in  std_logic_vector(255 downto 0);
         msg     : in  std_logic_vector(511 downto 0);
         msg_len : in  std_logic_vector(6 downto 0);
+        init    : in  std_logic;
+        final   : in  std_logic;
         tag     : out std_logic_vector(127 downto 0);
         done    : out std_logic
     );
@@ -847,6 +857,7 @@ architecture rtl of poly1305_mac is
     signal key_r     : unsigned(255 downto 0) := (others => '0');
     signal msg_r     : unsigned(511 downto 0) := (others => '0');  -- shifts 16 bytes per block
     signal remaining : unsigned(6 downto 0)   := (others => '0');  -- bytes not processed yet
+    signal final_r   : std_logic := '1';                           -- this piece is the last one
     signal wait_cnt  : natural range 0 to CORE_LATENCY := 0;
 
     signal h         : unsigned(129 downto 0) := (others => '0');  -- accumulator
@@ -888,15 +899,21 @@ begin
                     -- wait for start, then latch the inputs
                     when IDLE | FINISHED =>
                         if start = '1' then
-                            key_r     <= unsigned(key);
+                            if init = '1' then         -- new message: take the key, h = 0
+                                key_r <= unsigned(key);
+                                h     <= (others => '0');
+                            end if;                    -- else: continue with h and key_r
                             msg_r     <= unsigned(msg);
                             remaining <= unsigned(msg_len);
-                            h         <= (others => '0');
+                            final_r   <= final;
                             done_r    <= '0';
-                            if unsigned(msg_len) = 0 then
-                                state <= FINAL_1;      -- empty message: tag = s
-                            else
+                            if unsigned(msg_len) /= 0 then
                                 state <= SETUP;
+                            elsif final = '1' then
+                                state <= FINAL_1;      -- nothing (more) to add: tag = h + s
+                            else
+                                done_r <= '1';         -- empty, not final piece: nothing to do
+                                state  <= FINISHED;
                             end if;
                         end if;
 
@@ -925,10 +942,13 @@ begin
                     when WAIT_CORE =>
                         if wait_cnt = CORE_LATENCY then
                             h <= core_out;
-                            if remaining = 0 then
-                                state <= FINAL_1;
-                            else
+                            if remaining /= 0 then
                                 state <= SETUP;
+                            elsif final_r = '1' then
+                                state <= FINAL_1;      -- last piece: make the tag
+                            else
+                                done_r <= '1';         -- piece done, keep h for the next one
+                                state  <= FINISHED;
                             end if;
                         else
                             wait_cnt <= wait_cnt + 1;
@@ -1342,14 +1362,23 @@ end rtl;
 -- Top module, same style as chacha20_encrypt / poly1305_mac:
 -- pulse start, wait for done.
 -- It uses the Keccak team round (Part 11) and round constants (Part 10):
---   1) load: pad the message (PAD_BYTE ... 0x80) and put it in the state
+--   1) absorb: XOR the message block into the state (the last block is
+--      padded first: PAD_BYTE ... 0x80)
 --   2) 24 rounds of Keccak-f[1600], one round per clock
 --   3) digest = first 32 bytes of the state
 --
 -- Byte order (same as ChaCha20 / Poly1305): byte 0 is in bits 7..0
---   msg(511:0)    : message, up to 64 bytes
---   msg_len       : message length in bytes (0..64)
---   digest(255:0) : Keccak-256 hash (32 bytes)
+--   msg(1087:0)   : one message block, up to 136 bytes (136 = Keccak-256 rate)
+--   msg_len       : block length in bytes (final block: 0..135, other blocks: 136)
+--   init          : 1 = new message: the state starts at 0 (first block)
+--                   0 = continue: the state of the previous block is kept
+--   final         : 1 = last block: pad it; the digest is then the hash
+--                   0 = more blocks follow: msg_len must be 136, no padding
+--   digest(255:0) : Keccak-256 hash (32 bytes, valid after the final block)
+--
+-- Long messages (added 2026-10-08): 136-byte blocks with final = 0, then the
+-- rest (0..135 bytes) with final = 1. init = final = 1 hashes a message of
+-- up to 135 bytes in one go (as before, when the limit was 64 bytes).
 --
 -- Lane (x, y) of the Keccak state is state(y)(x); lane(0,0) = state(0)(0).
 -- File type in Vivado: VHDL 2008
@@ -1366,8 +1395,10 @@ entity keccak_hash is
         clk     : in  std_logic;
         rst     : in  std_logic;
         start   : in  std_logic;
-        msg     : in  std_logic_vector(511 downto 0);
-        msg_len : in  std_logic_vector(6 downto 0);
+        msg     : in  std_logic_vector(1087 downto 0);
+        msg_len : in  std_logic_vector(7 downto 0);
+        init    : in  std_logic;
+        final   : in  std_logic;
         digest  : out std_logic_vector(255 downto 0);
         done    : out std_logic
     );
@@ -1392,30 +1423,52 @@ architecture rtl of keccak_hash is
     --   0x06 = SHA3-256   (NIST FIPS 202 standard: same Keccak, 2 extra domain bits)
     constant PAD_BYTE : std_logic_vector(7 downto 0) := x"01";
 
-    -- first (and only) block: message bytes, then PAD_BYTE, zeros, and 0x80 at byte 135
-    -- (rate = 136 bytes; the other 64 bytes of the state start at 0)
-    function load_block(m : std_logic_vector(511 downto 0); len_in : natural) return k_state is
+    -- one block to absorb (rate = 136 bytes; the other 64 bytes of the state get 0):
+    --   final block: message bytes, then PAD_BYTE, zeros, and 0x80 XORed into byte 135
+    --                (len = 135 gives PAD_BYTE xor 0x80 in byte 135)
+    --   other block: all 136 message bytes, no padding
+    function load_block(m : std_logic_vector(1087 downto 0); len_in : natural; fin : std_logic) return k_state is
         variable blk : std_logic_vector(1599 downto 0) := (others => '0');  -- byte i = bits 8i+7..8i
         variable s   : k_state;
         variable len : natural;
     begin
         len := len_in;
-        if len > 64 then len := 64; end if;
-        for i in 0 to 63 loop
+        if fin = '0' or len > 136 then len := 136; end if;
+        for i in 0 to 135 loop
             if i < len then
                 blk(8 * i + 7 downto 8 * i) := m(8 * i + 7 downto 8 * i);
             end if;
         end loop;
-        for i in 0 to 64 loop
-            if i = len then
-                blk(8 * i + 7 downto 8 * i) := PAD_BYTE;              -- padding start
-            end if;
-        end loop;
-        blk(8 * 135 + 7 downto 8 * 135) := x"80";                     -- padding end
+        if fin = '1' then
+            for i in 0 to 135 loop
+                if i = len then
+                    blk(8 * i + 7 downto 8 * i) := PAD_BYTE;          -- padding start
+                end if;
+            end loop;
+            blk(8 * 135 + 7 downto 8 * 135) := blk(8 * 135 + 7 downto 8 * 135) xor x"80";  -- padding end
+        end if;
         for y in 0 to 4 loop
             for x in 0 to 4 loop
                 for b in 0 to 63 loop
                     s(y)(x)(b) := blk(64 * (x + 5 * y) + b);
+                end loop;
+            end loop;
+        end loop;
+        return s;
+    end function;
+
+    -- absorb: state xor block (init = 1: the old state counts as 0)
+    function absorb(st : k_state; blk : k_state; ini : std_logic) return k_state is
+        variable s : k_state;
+    begin
+        for y in 0 to 4 loop
+            for x in 0 to 4 loop
+                for b in 0 to 63 loop
+                    if ini = '1' then
+                        s(y)(x)(b) := blk(y)(x)(b);
+                    else
+                        s(y)(x)(b) := st(y)(x)(b) xor blk(y)(x)(b);
+                    end if;
                 end loop;
             end loop;
         end loop;
@@ -1452,7 +1505,7 @@ begin
 
                     when IDLE | FINISHED =>
                         if start = '1' then
-                            state     <= load_block(msg, to_integer(unsigned(msg_len)));
+                            state     <= absorb(state, load_block(msg, to_integer(unsigned(msg_len)), final), init);
                             round_cnt <= (others => '0');
                             done_r    <= '0';
                             fsm       <= ROUNDS;
@@ -1502,21 +1555,28 @@ end rtl;
 --              R  ciphertext (rvalid = 0 while ChaCha20 is busy)
 --   Poly1305 (Parts 2-8)
 --   0x20-0x27  W  key = r (0x20-0x23) || s (0x24-0x27), write-only
---   0x28       W  message length in bytes (0..64)
+--   0x28       W  piece length in bytes (0..64)
 --   0x29       R  status     bit 0 = done, bit 1 = busy
+--   0x2A       W  control    bit 0 = init (first piece), bit 1 = final (last piece)
+--                            (reset value 3 = whole message in one piece)
 --   0x2C-0x2F  R  tag        (16 bytes, rvalid = 0 while Poly1305 is busy)
 --   0x30-0x3F  W  message    (16 words = 64 bytes; only the first
 --                             "length" bytes are used)
 --   Keccak-256 (Parts 9-12)
---   0x40-0x4F  W  message    (16 words = 64 bytes; only the first
---                             "length" bytes are used)
---   0x50       W  message length in bytes (0..64)
---   0x51       R  status     bit 0 = done, bit 1 = busy
---   0x58-0x5F  R  digest     (32 bytes, rvalid = 0 while Keccak is busy)
+--   0x40-0x61  W  message    (34 words = 136 bytes = one Keccak block; only
+--                             the first "length" bytes are used)
+--   0x62       W  block length in bytes (final block 0..135, other blocks 136)
+--   0x63       R  status     bit 0 = done, bit 1 = busy
+--   0x64       W  control    bit 0 = init (first block), bit 1 = final (last block)
+--                            (reset value 3 = whole message in one block)
+--   0x68-0x6F  R  digest     (32 bytes, rvalid = 0 while Keccak is busy)
 --
 -- ChaCha20 reads its inputs while it runs: always read the result first (the
 -- read waits for it), then write the next block. Poly1305 and Keccak copy
--- their inputs when they start.
+-- their inputs when they start, so the next piece can be written right away
+-- (its start must wait until the unit is done: read the status or a result).
+-- Long messages (2026-10-08): Poly1305 and Keccak keep their state between
+-- pieces when control bit 0 (init) is 0.
 -- ============================================================================
 library ieee;
 use ieee.std_logic_1164.all;
@@ -1559,13 +1619,15 @@ architecture rtl of crypto_accel is
     signal po_key    : std_logic_vector(255 downto 0) := (others => '0');
     signal po_len    : std_logic_vector(6 downto 0)   := (others => '0');
     signal po_msg    : std_logic_vector(511 downto 0) := (others => '0');
+    signal po_ctrl   : std_logic_vector(1 downto 0)   := "11";   -- bit 0 = init, bit 1 = final
     signal po_tag    : std_logic_vector(127 downto 0);
     signal po_done   : std_logic;
     signal po_busy   : std_logic := '0';   -- poly1305_mac has no busy output: set on start, cleared on done
 
     -- Keccak input registers (copied by keccak_hash when it starts)
-    signal ke_len    : std_logic_vector(6 downto 0)   := (others => '0');
-    signal ke_msg    : std_logic_vector(511 downto 0) := (others => '0');
+    signal ke_len    : std_logic_vector(7 downto 0)    := (others => '0');
+    signal ke_msg    : std_logic_vector(1087 downto 0) := (others => '0');
+    signal ke_ctrl   : std_logic_vector(1 downto 0)    := "11";   -- bit 0 = init, bit 1 = final
     signal ke_digest : std_logic_vector(255 downto 0);
     signal ke_done   : std_logic;
     signal ke_busy   : std_logic := '0';   -- keccak_hash has no busy output: set on start, cleared on done
@@ -1596,6 +1658,8 @@ begin
             key     => po_key,
             msg     => po_msg,
             msg_len => po_len,
+            init    => po_ctrl(0),
+            final   => po_ctrl(1),
             tag     => po_tag,
             done    => po_done
         );
@@ -1607,6 +1671,8 @@ begin
             start   => start_keccak,
             msg     => ke_msg,
             msg_len => ke_len,
+            init    => ke_ctrl(0),
+            final   => ke_ctrl(1),
             digest  => ke_digest,
             done    => ke_done
         );
@@ -1654,15 +1720,17 @@ begin
                     if a = 32 + k then po_key(32 * k + 31 downto 32 * k) <= wdata; end if;
                 end loop;
                 if a = 40 then po_len <= wdata(6 downto 0); end if;   -- Poly1305 length
+                if a = 42 then po_ctrl <= wdata(1 downto 0); end if;  -- Poly1305 control
                 for k in 0 to 15 loop                          -- Poly1305 message
                     if a = 48 + k then po_msg(32 * k + 31 downto 32 * k) <= wdata; end if;
                 end loop;
             end if;
             if we = '1' and waddr(7 downto 6) = "01" then     -- Keccak
-                for k in 0 to 15 loop                          -- Keccak message
+                for k in 0 to 33 loop                          -- Keccak message block
                     if a = k then ke_msg(32 * k + 31 downto 32 * k) <= wdata; end if;
                 end loop;
-                if a = 16 then ke_len <= wdata(6 downto 0); end if;   -- Keccak length
+                if a = 34 then ke_len <= wdata(7 downto 0); end if;   -- Keccak length
+                if a = 36 then ke_ctrl <= wdata(1 downto 0); end if;  -- Keccak control
             end if;
         end if;
     end process;
@@ -1696,12 +1764,12 @@ begin
                 end if;
             end loop;
         elsif raddr(7 downto 6) = "01" then                    -- Keccak
-            if a = 17 then                                     -- Keccak status
+            if a = 35 then                                     -- Keccak status
                 rdata(0) <= ke_done and not ke_busy;
                 rdata(1) <= ke_busy;
             end if;
             for k in 0 to 7 loop                               -- Keccak digest
-                if a = 24 + k then
+                if a = 40 + k then
                     rdata  <= ke_digest(32 * k + 31 downto 32 * k);
                     rvalid <= not ke_busy;
                 end if;

@@ -1,0 +1,47 @@
+demo_chacha20.c (FAST CPU bitstream demo/neorv32_crypto_fastcpu.bit, Step C hardware, 12 MHz, 2026-10-08)
+(only the last state of each progress bar is kept; in Tera Term it updates in place)
+
+=================================================================
+ DEMO 1: ChaCha20 encryption - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official test: RFC 8439 section 2.4.2, block 1
+  Key:        000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+  Nonce:      000000000000004a00000000   Counter: 1
+  Plaintext:  "Ladies and Gentlemen of the class of '99: If I could offer you o"
+  Expected:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  (first 32 of 64 bytes)
+  Software:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (8561 cycles)
+  Hardware:   6e2e359a2568f98041ba0728dd0d6981e97e7aec1d4360c20a27afccfd9fae0b...  PASS  (888 cycles)
+
+[2] Your message
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > Hello
+  Plaintext:        "Hello"  (5 bytes)
+  Ciphertext (SW):  6a2a3d9f2f
+  Ciphertext (HW):  6a2a3d9f2f
+  Ciphertext as text (unreadable = encrypted): "j*=./"
+  Software == hardware: YES   (hardware took 833 cycles)
+  Decrypted by HW:  "Hello"  = original message
+
+[3] Benchmark: encrypt 1000 blocks of 64 bytes (64,000 bytes)
+  LD1 = software running, LD2 = hardware running
+
+  SW [####################] 1000/1000  713.810 ms
+
+  HW [####################] 1000/1000  23.860 ms
+
+  Checking SW == HW: 1000/1000 blocks, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Software  713.810 ms   8565290 cycles   8565 cycles/run
+  Hardware  23.860 ms   285859 cycles   285 cycles/run
+  Speedup ChaCha20: 30.0x faster in hardware
+  The ChaCha20 hardware core itself needs 10 cycles per block;
+  the rest is the CPU moving 64 bytes in and 64 bytes out.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.

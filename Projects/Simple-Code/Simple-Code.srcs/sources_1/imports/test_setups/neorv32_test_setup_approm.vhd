@@ -21,7 +21,7 @@ entity neorv32_test_setup_approm is
   generic (
     CLOCK_FREQUENCY : natural := 12000000;
     BOOT_MODE       : natural := 0;          -- 0 = bootloader (FPGA), 2 = IMEM image (simulation)
-    IMEM_SIZE       : natural := 16*1024;
+    IMEM_SIZE       : natural := 32*1024;    -- 32 KB (was 16 KB) for the ChaCha20-Poly1305 programs
     DMEM_SIZE       : natural := 8*1024
   );
   port (

@@ -58,6 +58,15 @@ static NOINLINE void print_text(const uint8_t *p, uint32_t n) {
   neorv32_uart0_putc('"');
 }
 
+/* hex in lines of 32 bytes (64 characters), so Tera Term never wraps them */
+static NOINLINE void hex_lines(const uint8_t *p, uint32_t n) {
+  for (uint32_t i = 0; i < n; i += 32) {
+    neorv32_uart0_printf("    ");
+    print_hex(p + i, (n - i > 32) ? 32 : (int)(n - i));
+    neorv32_uart0_printf("\n");
+  }
+}
+
 static inline const char *pass_fail(int ok) {
   return ok ? "PASS" : "FAIL";
 }

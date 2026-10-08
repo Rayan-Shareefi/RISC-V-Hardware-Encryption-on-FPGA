@@ -8,6 +8,10 @@ gen_poly1305_vectors.py  -  make the Poly1305 test vectors for the RISC-V progra
 3) Uses the reference to make tags for every message length 0..64 bytes
    (tests the partial-block padding).
 4) Writes poly1305_vectors.h for the C programs.
+5) Writes hw/tb_poly1305_vectors_pkg.vhd for the hardware testbench, incl. long
+   messages (> 64 bytes, sent to the hardware in pieces): RFC A.3 #2-#4 and the
+   MAC input of the ChaCha20-Poly1305 AEAD example RFC 8439 2.8.2 (made here
+   with a Python ChaCha20 written from the RFC and checked against its tag).
 
 Run:  python scripts/gen_poly1305_vectors.py
 """
@@ -131,6 +135,67 @@ with OUT.open("w", newline="\n") as f:
 print(f"wrote {OUT.relative_to(ROOT)}")
 
 
+# ---- ChaCha20 + ChaCha20-Poly1305 AEAD (RFC 8439 2.3 / 2.6 / 2.8), straight from the RFC ----
+def chacha20_block(key: bytes, counter: int, nonce: bytes) -> bytes:
+    def rotl(v, n):
+        return ((v << n) | (v >> (32 - n))) & 0xFFFFFFFF
+
+    def qr(s, a, b, c, d):
+        s[a] = (s[a] + s[b]) & 0xFFFFFFFF; s[d] = rotl(s[d] ^ s[a], 16)
+        s[c] = (s[c] + s[d]) & 0xFFFFFFFF; s[b] = rotl(s[b] ^ s[c], 12)
+        s[a] = (s[a] + s[b]) & 0xFFFFFFFF; s[d] = rotl(s[d] ^ s[a], 8)
+        s[c] = (s[c] + s[d]) & 0xFFFFFFFF; s[b] = rotl(s[b] ^ s[c], 7)
+
+    st = [0x61707865, 0x3320646e, 0x79622d32, 0x6b206574]
+    st += [int.from_bytes(key[4 * i:4 * i + 4], "little") for i in range(8)]
+    st += [counter] + [int.from_bytes(nonce[4 * i:4 * i + 4], "little") for i in range(3)]
+    w = st[:]
+    for _ in range(10):
+        qr(w, 0, 4, 8, 12); qr(w, 1, 5, 9, 13); qr(w, 2, 6, 10, 14); qr(w, 3, 7, 11, 15)
+        qr(w, 0, 5, 10, 15); qr(w, 1, 6, 11, 12); qr(w, 2, 7, 8, 13); qr(w, 3, 4, 9, 14)
+    return b"".join(((w[i] + st[i]) & 0xFFFFFFFF).to_bytes(4, "little") for i in range(16))
+
+
+def chacha20_encrypt(key, counter, nonce, pt):
+    out = bytearray()
+    for j in range(0, len(pt), 64):
+        ks = chacha20_block(key, counter + j // 64, nonce)
+        out += bytes(a ^ b for a, b in zip(pt[j:j + 64], ks))
+    return bytes(out)
+
+
+def pad16(b):
+    return bytes((-len(b)) % 16)
+
+
+def aead_mac_data(aad, ct):
+    return aad + pad16(aad) + ct + pad16(ct) + len(aad).to_bytes(8, "little") + len(ct).to_bytes(8, "little")
+
+
+def aead_encrypt(key, nonce, aad, pt):
+    """returns (Poly1305 one-time key, ciphertext, MAC input, tag)"""
+    otk = chacha20_block(key, 0, nonce)[:32]
+    ct = chacha20_encrypt(key, 1, nonce, pt)
+    mac = aead_mac_data(aad, ct)
+    return otk, ct, mac, poly1305_ref(otk, mac)
+
+
+AEAD_KEY = bytes(range(0x80, 0xA0))
+AEAD_NONCE = bytes.fromhex("070000004041424344454647")
+AEAD_AAD = bytes.fromhex("50515253c0c1c2c3c4c5c6c7")
+AEAD_PT = (b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip "
+           b"for the future, sunscreen would be it.")
+aead_otk, aead_ct, aead_mac, aead_tag = aead_encrypt(AEAD_KEY, AEAD_NONCE, AEAD_AAD, AEAD_PT)
+assert aead_otk.hex() == "7bac2b252db447af09b67a55a4e955840ae1d6731075d9eb2a9375783ed553ff", "RFC 2.8.2 Poly1305 key"
+assert aead_ct[:16].hex() == "d31a8d34648e60db7b86afbc53ef7ec2", "RFC 2.8.2 ciphertext"
+assert aead_tag.hex() == "1ae10b594f09e26a7e902ecbd0600691", "RFC 2.8.2 tag"
+print("ChaCha20-Poly1305 reference matches the RFC 8439 2.8.2 example (key, ciphertext, tag)")
+
+long_vecs = [v for v in vectors if len(v[2]) > 64]                  # RFC A.3 #2, #3, #4
+long_vecs.append(("RFC 2.8.2 AEAD MAC", aead_otk, aead_mac, aead_tag))
+assert all(len(m) <= 512 for (_, _, m, _) in long_vecs)
+
+
 # ---- write the VHDL package for the hardware testbench (messages <= 64 bytes) ----
 def slv(b, nbytes):
     """bytes -> VHDL hex literal, byte 0 in bits 7..0 (zero padded to nbytes)"""
@@ -164,5 +229,25 @@ with VHD.open("w", newline="\n") as f:
                     f'         {slv(msg, 64)},\n'
                     f'         {slv(tag, 16)})')
     f.write(",\n".join(rows))
+    f.write("\n    );\n\n")
+    # long messages: sent in pieces (init / final control bits)
+    f.write("    -- long messages (more than 64 bytes): the testbench sends them in pieces\n")
+    f.write("    type poly_long_tv_t is record\n"
+            "        name : string(1 to 20);\n"
+            "        key  : std_logic_vector(255 downto 0);\n"
+            "        len  : natural;\n"
+            "        msg  : std_logic_vector(4095 downto 0);\n"
+            "        tag  : std_logic_vector(127 downto 0);\n"
+            "    end record;\n"
+            "    type poly_long_tv_array_t is array (natural range <>) of poly_long_tv_t;\n\n")
+    f.write("    constant POLY_LONG_TVS : poly_long_tv_array_t := (\n")
+    rows = []
+    for name, key, msg, tag in long_vecs:
+        rows.append(f'        ("{name[:20]:<20}",\n'
+                    f'         {slv(key, 32)},\n'
+                    f'         {len(msg)},\n'
+                    f'         {slv(msg, 512)},\n'
+                    f'         {slv(tag, 16)})')
+    f.write(",\n".join(rows))
     f.write("\n    );\n\nend package;\n")
-print(f"wrote {VHD.relative_to(ROOT)}  ({len(hw_vecs)} vectors)")
+print(f"wrote {VHD.relative_to(ROOT)}  ({len(hw_vecs)} vectors + {len(long_vecs)} long)")

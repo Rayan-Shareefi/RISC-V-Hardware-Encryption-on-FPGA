@@ -5,11 +5,14 @@
  * 1) ChaCha20: encrypts 4 blocks with the custom instructions and compares
  *    with the expected ciphertext (RFC 8439 test vectors + the project-1 test,
  *    the same 4 tests as hw/tb_crypto_accel.vhd).
- * 2) Poly1305: the RFC 8439 vectors that fit in 64 bytes and every message
- *    length 0..64 (poly1305_vectors.h, same as hw/tb_crypto_accel.vhd).
- * 3) Keccak-256: known values + pk/ test message (<= 64 bytes) and
- *    every message length 0..64 (keccak_vectors.h, Phase 8).
- * 4) Checks the 1 microsecond counter against the CPU cycle counter.
+ *    Also the whole RFC 8439 2.4.2 message (114 bytes = 2 blocks, counter 1, 2).
+ * 2) Poly1305: all RFC 8439 vectors (2.5.2, A.3 #1-#11, up to 375 bytes - long
+ *    ones are sent in 64-byte pieces) and every length 0..64 (poly1305_vectors.h).
+ * 3) Keccak-256: known values + pk/ test message and every length 0..64 and
+ *    135..300 bytes (several 136-byte blocks) (keccak_vectors.h).
+ * 4) ChaCha20-Poly1305 (RFC 8439 2.8.2): encrypt, tag, check + decrypt, and a
+ *    changed bit must be rejected.
+ * 5) Checks the 1 microsecond counter against the CPU cycle counter.
  *
  * Short and fast, so it is also used for the full-system simulation
  * (hw/run_system_sim.bat). Output: UART0 at 19200 baud (Tera Term, COM3).
@@ -20,6 +23,7 @@
 #include "crypto_accel.h"
 #include "poly1305_vectors.h"
 #include "keccak_vectors.h"
+#include "chacha20_poly1305.h"
 
 #define BAUD_RATE 19200
 
@@ -75,7 +79,7 @@ static const test_t tests[] = {
 };
 #define NUM_TESTS (sizeof(tests) / sizeof(tests[0]))
 
-static void print_hex(const uint8_t *p, int n) {
+static void print_hex_nl(const uint8_t *p, int n) {
   for (int i = 0; i < n; i++) {
     neorv32_uart0_printf("%c%c", "0123456789abcdef"[p[i] >> 4], "0123456789abcdef"[p[i] & 15]);
   }
@@ -99,11 +103,25 @@ static int test_chacha20_hw(void) {
       neorv32_uart0_printf("PASS  %s  (%u cycles)\n", tests[t].name, c1 - c0);
     } else {
       neorv32_uart0_printf("FAIL  %s\n  got:      ", tests[t].name);
-      print_hex((const uint8_t *)out, 64);
+      print_hex_nl((const uint8_t *)out, 64);
       neorv32_uart0_printf("  expected: ");
-      print_hex(tests[t].expected, 64);
+      print_hex_nl(tests[t].expected, 64);
       fails++;
     }
+  }
+
+  /* the whole RFC 8439 2.4.2 message: 114 bytes = 2 blocks (counter 1 and 2) */
+  {
+    static const uint8_t pt[115] =
+      "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+    uint32_t key[8], nonce[3], in[29], out[29];
+    memcpy(key, tests[1].key, 32);
+    memcpy(nonce, tests[1].nonce, 12);
+    memcpy(in, pt, 114);
+    chacha20_hw_encrypt(key, nonce, 1, in, out, 114);
+    int ok = (memcmp(out, EXP_RFC242_1, 64) == 0) && (memcmp((uint8_t *)out + 64, EXP_RFC242_2, 50) == 0);
+    neorv32_uart0_printf("%s  RFC 8439 2.4.2 whole message (114 bytes, 2 blocks)\n", ok ? "PASS" : "FAIL");
+    fails += !ok;
   }
   return fails;
 }
@@ -129,24 +147,29 @@ static int test_us_counter(void) {
   return !ok;
 }
 
-/* Poly1305 hardware: RFC vectors (<= 64 bytes) + every length 0..64, return number of failures */
+/* Poly1305 hardware: all RFC vectors + every length 0..64, return number of failures */
 static int test_poly1305_hw(void) {
-  uint32_t key[8], msg[16], tag[4];
-  uint32_t nrfc = 0, bad_rfc = 0, bad_len = 0, c64 = 0;
+  static uint32_t msg[96];                           /* up to 384 bytes */
+  uint32_t key[8], tag[4];
+  uint32_t nrfc = 0, bad_rfc = 0, bad_len = 0, c64 = 0, clong = 0, nlong = 0;
 
   for (unsigned v = 0; v < POLY_NUM_VECTORS; v++) {
-    if (POLY_VECTORS[v].len > 64) continue;           /* the hardware takes up to 64 bytes */
+    uint32_t len = POLY_VECTORS[v].len;
     memcpy(key, POLY_VECTORS[v].key, 32);
-    memset(msg, 0, 64);
-    memcpy(msg, POLY_VECTORS[v].msg, POLY_VECTORS[v].len);
-    poly1305_hw_mac(key, msg, POLY_VECTORS[v].len, tag);
+    memset(msg, 0, sizeof(msg));
+    memcpy(msg, POLY_VECTORS[v].msg, len);
+    uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
+    poly1305_hw_mac(key, msg, len, tag);             /* > 64 bytes: sent in 64-byte pieces */
+    uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
+    if (len > nlong) { nlong = len; clong = c1 - c0; }   /* remember the longest one */
     nrfc++;
     if (memcmp(tag, POLY_VECTORS[v].tag, 16) != 0) {
       neorv32_uart0_printf("FAIL  Poly1305 %s\n", POLY_VECTORS[v].name);
       bad_rfc++;
     }
   }
-  neorv32_uart0_printf("%s  Poly1305 %u RFC 8439 vectors (<= 64 bytes)\n", bad_rfc ? "FAIL" : "PASS", nrfc);
+  neorv32_uart0_printf("%s  Poly1305 %u RFC 8439 vectors (longest %u bytes: %u cycles)\n",
+                       bad_rfc ? "FAIL" : "PASS", nrfc, nlong, clong);
 
   memcpy(key, POLY_VECTORS[0].key, 32);
   memcpy(msg, SWEEP_MSG, 64);
@@ -162,14 +185,14 @@ static int test_poly1305_hw(void) {
   return (bad_rfc != 0) + (bad_len != 0);
 }
 
-/* Keccak hardware: named messages (<= 64 bytes) + every length 0..64, return number of failures */
+/* Keccak hardware: named messages + every length 0..64 and 135..300, return number of failures */
 static int test_keccak_hw(void) {
-  uint32_t msg[16], d[8];
-  uint32_t nnamed = 0, bad_named = 0, bad_len = 0, c64 = 0;
+  static uint32_t msg[75];                           /* up to 300 bytes */
+  uint32_t d[8];
+  uint32_t nnamed = 0, bad_named = 0, bad_len = 0, c64 = 0, c300 = 0;
 
   for (unsigned v = 0; v < KECCAK_NUM_VECTORS; v++) {
-    if (KECCAK_VECTORS[v].len > 64) continue;          /* the hardware takes up to 64 bytes */
-    memset(msg, 0, 64);
+    memset(msg, 0, sizeof(msg));
     memcpy(msg, KECCAK_VECTORS[v].msg, KECCAK_VECTORS[v].len);
     keccak256_hw(msg, KECCAK_VECTORS[v].len, d);
     nnamed++;
@@ -178,21 +201,49 @@ static int test_keccak_hw(void) {
       bad_named++;
     }
   }
-  neorv32_uart0_printf("%s  Keccak-256 %u known/pk messages (<= 64 bytes)\n", bad_named ? "FAIL" : "PASS", nnamed);
+  neorv32_uart0_printf("%s  Keccak-256 %u known/pk messages\n", bad_named ? "FAIL" : "PASS", nnamed);
 
-  memcpy(msg, KECCAK_PATTERN, 64);
+  memcpy(msg, KECCAK_PATTERN, 300);
   for (unsigned k = 0; k < KECCAK_NUM_LENS; k++) {
     uint32_t n = KECCAK_LENS[k];
-    if (n > 64) continue;
     uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
-    keccak256_hw(msg, n, d);
+    keccak256_hw(msg, n, d);                         /* >= 136 bytes: several blocks */
     uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
     if (n == 64) c64 = c1 - c0;
+    if (n == 300) c300 = c1 - c0;
     bad_len += (memcmp(d, KECCAK_LEN_DIGESTS[k], 32) != 0);
   }
-  neorv32_uart0_printf("%s  Keccak-256 every length 0..64 bytes, %u wrong (64 bytes: %u cycles)\n",
-                       bad_len ? "FAIL" : "PASS", bad_len, c64);
+  neorv32_uart0_printf("%s  Keccak-256 lengths 0..64 and 135..300 bytes, %u wrong (64 bytes: %u cycles, 300 bytes: %u cycles)\n",
+                       bad_len ? "FAIL" : "PASS", bad_len, c64, c300);
   return (bad_named != 0) + (bad_len != 0);
+}
+
+/* ChaCha20-Poly1305 (RFC 8439 2.8.2) in hardware: encrypt, check + decrypt, tamper, return failures */
+static int test_aead_hw(void) {
+  static const uint8_t key8[32] = {
+    0x80,0x81,0x82,0x83,0x84,0x85,0x86,0x87,0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x8e,0x8f,
+    0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x97,0x98,0x99,0x9a,0x9b,0x9c,0x9d,0x9e,0x9f };
+  static const uint8_t nonce8[12] = {0x07,0,0,0,0x40,0x41,0x42,0x43,0x44,0x45,0x46,0x47};
+  static const uint8_t aad[12] = {0x50,0x51,0x52,0x53,0xc0,0xc1,0xc2,0xc3,0xc4,0xc5,0xc6,0xc7};
+  static const uint8_t pt[115] =
+    "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+  static const uint8_t tag_rfc[16] = {0x1a,0xe1,0x0b,0x59,0x4f,0x09,0xe2,0x6a,0x7e,0x90,0x2e,0xcb,0xd0,0x60,0x06,0x91};
+  static const uint8_t ct_rfc16[16] = {0xd3,0x1a,0x8d,0x34,0x64,0x8e,0x60,0xdb,0x7b,0x86,0xaf,0xbc,0x53,0xef,0x7e,0xc2};
+  static uint32_t key[8], nonce[3], in[29], ct[29], back[29], tag[4], otk[8];
+  memcpy(key, key8, 32);
+  memcpy(nonce, nonce8, 12);
+  memcpy(in, pt, 114);
+  uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
+  aead_encrypt_hw(key, nonce, aad, 12, in, 114, ct, tag, otk);
+  uint32_t c1 = neorv32_cpu_csr_read(CSR_MCYCLE);
+  int enc_ok = (memcmp(tag, tag_rfc, 16) == 0) && (memcmp(ct, ct_rfc16, 16) == 0);
+  int dec_ok = aead_decrypt_hw(key, nonce, aad, 12, ct, 114, tag, back) && (memcmp(back, pt, 114) == 0);
+  ((uint8_t *)ct)[100] ^= 0x80;                       /* change 1 bit */
+  int rej_ok = !aead_decrypt_hw(key, nonce, aad, 12, ct, 114, tag, back);
+  neorv32_uart0_printf("%s  ChaCha20-Poly1305 RFC 8439 2.8.2 (114 bytes + 12-byte AAD, %u cycles), decrypt %s, changed bit %s\n",
+                       (enc_ok && dec_ok && rej_ok) ? "PASS" : "FAIL", c1 - c0,
+                       dec_ok ? "OK" : "WRONG", rej_ok ? "rejected" : "ACCEPTED");
+  return !(enc_ok && dec_ok && rej_ok);
 }
 
 int main(void) {
@@ -210,6 +261,7 @@ int main(void) {
     int fails = test_chacha20_hw();
     fails += test_poly1305_hw();
     fails += test_keccak_hw();
+    fails += test_aead_hw();
     fails += test_us_counter();
     if (fails == 0) {
       neorv32_uart0_printf("ALL TESTS PASSED\n");

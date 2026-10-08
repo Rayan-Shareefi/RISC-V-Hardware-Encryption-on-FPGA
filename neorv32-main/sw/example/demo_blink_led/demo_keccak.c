@@ -2,7 +2,8 @@
  * demo_keccak.c  -  DEMO 3: Keccak-256 hashing, software vs hardware
  *
  *  [1] Official test   Keccak-256 known values ("test" and the empty message)
- *                      in SW and HW vs the published values
+ *                      in SW and HW vs the published values, and a 300-byte
+ *                      message (3 blocks of 136 bytes) vs the Python reference
  *  [2] Your message    type a message: hashed in SW and HW; then one letter is
  *                      changed and the hash changes completely (about half of
  *                      the 256 bits flip = "avalanche effect")
@@ -15,6 +16,7 @@
 #include "demo_util.h"
 #include "crypto_accel.h"
 #include "keccak_sw.h"
+#include "keccak_vectors.h"
 
 #define RUNS    1000
 #define CHUNK   100
@@ -35,8 +37,10 @@ static const char DEFAULT_MSG[] = "Hello my keccak";
  * [1] official test
  * ------------------------------------------------------------------------- */
 static int one_official(const char *name, const uint8_t *msg, uint32_t len, const uint8_t *expected) {
+  static uint32_t msg_w[75];                         /* up to 300 bytes */
   uint8_t  sw[32];
-  uint32_t msg_w[16] = {0}, hw[8];
+  uint32_t hw[8];
+  memset(msg_w, 0, sizeof(msg_w));
   memcpy(msg_w, msg, len);
 
   uint32_t c0 = neorv32_cpu_csr_read(CSR_MCYCLE);
@@ -59,6 +63,10 @@ static int official_test(void) {
   demo_step("1] Official test: Keccak-256 known values");
   int fails = one_official("\"test\"", (const uint8_t *)"test", 4, KECCAK_TEST);
   fails += one_official("\"\" (empty message)", (const uint8_t *)"", 0, KECCAK_EMPTY);
+  /* a long message: 300 bytes = 3 Keccak blocks (136 + 136 + 28), the hardware keeps
+     its state between the blocks; expected value from the Python reference */
+  fails += one_official("300-byte test pattern (3 blocks of 136 bytes)", KECCAK_PATTERN,
+                        KECCAK_LENS[KECCAK_NUM_LENS - 1], KECCAK_LEN_DIGESTS[KECCAK_NUM_LENS - 1]);
   return fails;
 }
 

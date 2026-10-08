@@ -17,7 +17,16 @@
 --
 -- Keccak-256 tests (tb_keccak_vectors_pkg.vhd, made by
 -- scripts/gen_keccak_vectors.py): Keccak-256 known values, the pk/ test message and
--- every message length 0..64. Also checks the 24-cycle latency.
+-- every message length 0..135 (one block). Also checks the 24-cycle latency.
+--
+-- Long messages (added 2026-10-08, init/final control):
+--   Poly1305: RFC 8439 A.3 #2-#4 and the AEAD MAC input of RFC 8439 2.8.2,
+--             sent in 64-byte pieces and again in 16-byte pieces (the key is
+--             given only with the first piece)
+--   Keccak:   136..500 bytes, sent as 136-byte blocks + a final block
+-- TOP (crypto_accel, register interface as the CPU uses it): ChaCha20 block,
+-- Keccak 135 bytes in one block with the reset control value, Keccak 300 bytes
+-- in blocks, and the AEAD Poly1305 tag in 64-byte pieces.
 --
 -- Prints PASS/FAIL per test and a final summary.
 -- File type in Vivado: VHDL 2008
@@ -131,15 +140,32 @@ architecture sim of tb_crypto_accel is
     signal po_key   : std_logic_vector(255 downto 0) := (others => '0');
     signal po_msg   : std_logic_vector(511 downto 0) := (others => '0');
     signal po_len   : std_logic_vector(6 downto 0)   := (others => '0');
+    signal po_init  : std_logic := '1';
+    signal po_final : std_logic := '1';
     signal po_tag   : std_logic_vector(127 downto 0);
     signal po_done  : std_logic;
 
     -- Keccak DUT signals
     signal ke_start  : std_logic := '0';
-    signal ke_msg    : std_logic_vector(511 downto 0) := (others => '0');
-    signal ke_len    : std_logic_vector(6 downto 0)   := (others => '0');
+    signal ke_msg    : std_logic_vector(1087 downto 0) := (others => '0');
+    signal ke_len    : std_logic_vector(7 downto 0)    := (others => '0');
+    signal ke_init   : std_logic := '1';
+    signal ke_final  : std_logic := '1';
     signal ke_digest : std_logic_vector(255 downto 0);
     signal ke_done   : std_logic;
+
+    -- TOP (crypto_accel) signals: the register interface the CPU uses
+    signal t_rstn     : std_logic;
+    signal t_we       : std_logic := '0';
+    signal t_waddr    : std_logic_vector(7 downto 0)  := (others => '0');
+    signal t_wdata    : std_logic_vector(31 downto 0) := (others => '0');
+    signal t_raddr    : std_logic_vector(7 downto 0)  := (others => '0');
+    signal t_rdata    : std_logic_vector(31 downto 0);
+    signal t_rvalid   : std_logic;
+    signal t_start_ch : std_logic := '0';
+    signal t_start_po : std_logic := '0';
+    signal t_start_ke : std_logic := '0';
+    signal t_busy     : std_logic;
 
     signal sim_done : boolean := false;
 
@@ -176,6 +202,8 @@ begin
             key     => po_key,
             msg     => po_msg,
             msg_len => po_len,
+            init    => po_init,
+            final   => po_final,
             tag     => po_tag,
             done    => po_done
         );
@@ -187,8 +215,28 @@ begin
             start   => ke_start,
             msg     => ke_msg,
             msg_len => ke_len,
+            init    => ke_init,
+            final   => ke_final,
             digest  => ke_digest,
             done    => ke_done
+        );
+
+    t_rstn <= not rst;
+
+    dut_top : entity work.crypto_accel
+        port map (
+            clk          => clk,
+            rstn         => t_rstn,
+            we           => t_we,
+            waddr        => t_waddr,
+            wdata        => t_wdata,
+            raddr        => t_raddr,
+            rdata        => t_rdata,
+            rvalid       => t_rvalid,
+            start_chacha => t_start_ch,
+            start_poly   => t_start_po,
+            start_keccak => t_start_ke,
+            busy         => t_busy
         );
 
     stim : process
@@ -318,7 +366,7 @@ begin
             ok := true;
             wait until rising_edge(clk);
             ke_msg   <= tv.msg;
-            ke_len   <= std_logic_vector(to_unsigned(tv.len, 7));
+            ke_len   <= std_logic_vector(to_unsigned(tv.len, 8));
             ke_start <= '1';
             wait until rising_edge(clk);           -- circuit samples start here
             ke_start <= '0';
@@ -351,10 +399,169 @@ begin
             end if;
         end procedure;
 
+        -- long Poly1305 message in pieces of "chunk" bytes (16, 32, 48 or 64):
+        -- init = 1 only on the first piece (the key is given only there),
+        -- final = 1 only on the last piece; h is kept in between
+        procedure run_poly_long(tv : poly_long_tv_t; chunk : natural;
+                                variable ok : out boolean; variable cycles : out natural) is
+            variable piece  : std_logic_vector(511 downto 0);
+            variable off, n, cnt, pieces : natural := 0;
+            variable left   : natural;
+        begin
+            ok := true; off := 0; cnt := 0; pieces := 0; left := tv.len;
+            loop
+                if left > chunk then n := chunk; else n := left; end if;
+                piece := (others => '0');
+                for i in 0 to n - 1 loop
+                    piece(8 * i + 7 downto 8 * i) := tv.msg(8 * (off + i) + 7 downto 8 * (off + i));
+                end loop;
+                wait until rising_edge(clk);
+                if pieces = 0 then po_key <= tv.key; po_init <= '1';
+                else               po_key <= (others => '0'); po_init <= '0'; end if;
+                if left > chunk then po_final <= '0'; else po_final <= '1'; end if;
+                po_msg   <= piece;
+                po_len   <= std_logic_vector(to_unsigned(n, 7));
+                po_start <= '1';
+                wait until rising_edge(clk);
+                po_start <= '0';
+                po_key   <= (others => '0');
+                po_msg   <= (others => '0');
+                loop
+                    wait until rising_edge(clk);
+                    wait for 1 ns;
+                    cnt := cnt + 1;
+                    exit when po_done = '1' or cnt > 20000;
+                end loop;
+                pieces := pieces + 1;
+                exit when left <= chunk;
+                off := off + n;
+                left := left - n;
+            end loop;
+            po_init  <= '1';
+            po_final <= '1';
+            cycles := cnt;
+            if po_tag /= tv.tag then
+                report tv.name & " in " & integer'image(chunk) & "-byte pieces: WRONG tag" & LF &
+                       "   got      " & hex(po_tag) & LF &
+                       "   expected " & hex(tv.tag) severity error;
+                ok := false;
+            end if;
+        end procedure;
+
+        -- long Keccak message: 136-byte blocks (final = 0), then the rest (final = 1)
+        procedure run_keccak_long(tv : keccak_long_tv_t; variable ok : out boolean;
+                                  variable cycles : out natural; variable blocks : out natural) is
+            variable blk  : std_logic_vector(1087 downto 0);
+            variable off, n, cnt, nb : natural := 0;
+            variable left : natural;
+            variable fin  : boolean;
+        begin
+            ok := true; off := 0; cnt := 0; nb := 0; left := tv.len;
+            loop
+                fin := left < 136;
+                if fin then n := left; else n := 136; end if;
+                blk := (others => '0');
+                for i in 0 to n - 1 loop
+                    blk(8 * i + 7 downto 8 * i) := tv.msg(8 * (off + i) + 7 downto 8 * (off + i));
+                end loop;
+                wait until rising_edge(clk);
+                if nb = 0 then ke_init <= '1'; else ke_init <= '0'; end if;
+                if fin then ke_final <= '1'; else ke_final <= '0'; end if;
+                ke_msg   <= blk;
+                ke_len   <= std_logic_vector(to_unsigned(n, 8));
+                ke_start <= '1';
+                wait until rising_edge(clk);
+                ke_start <= '0';
+                ke_msg   <= (others => '0');
+                loop
+                    wait until rising_edge(clk);
+                    wait for 1 ns;
+                    cnt := cnt + 1;
+                    exit when ke_done = '1' or cnt > 5000;
+                end loop;
+                nb := nb + 1;
+                exit when fin;
+                off := off + 136;
+                left := left - 136;
+            end loop;
+            ke_init  <= '1';
+            ke_final <= '1';
+            cycles := cnt;
+            blocks := nb;
+            if ke_digest /= tv.digest then
+                report "Keccak-256 " & integer'image(tv.len) & " bytes: WRONG digest" & LF &
+                       "   got      " & hex(ke_digest) & LF &
+                       "   expected " & hex(tv.digest) severity error;
+                ok := false;
+            end if;
+        end procedure;
+
+        -- TOP register access, the way the CPU's custom instructions do it
+        procedure top_write(addr : natural; data : std_logic_vector(31 downto 0)) is
+        begin
+            wait until rising_edge(clk);
+            t_waddr <= std_logic_vector(to_unsigned(addr, 8));
+            t_wdata <= data;
+            t_we    <= '1';
+            wait until rising_edge(clk);
+            t_we    <= '0';
+        end procedure;
+
+        procedure top_write_n(addr : natural; n : natural) is   -- write the number n
+        begin
+            top_write(addr, std_logic_vector(to_unsigned(n, 32)));
+        end procedure;
+
+        procedure top_read(addr : natural; variable data : out std_logic_vector(31 downto 0)) is
+            variable cnt : natural := 0;
+        begin
+            wait until rising_edge(clk);
+            t_raddr <= std_logic_vector(to_unsigned(addr, 8));
+            wait for 1 ns;
+            while t_rvalid /= '1' and cnt < 5000 loop          -- the CPU stalls here
+                wait until rising_edge(clk);
+                wait for 1 ns;
+                cnt := cnt + 1;
+            end loop;
+            data := t_rdata;
+        end procedure;
+
+        procedure top_start(which : natural) is              -- 0 ChaCha20, 1 Poly1305, 2 Keccak
+        begin
+            wait until rising_edge(clk);
+            case which is
+                when 0      => t_start_ch <= '1';
+                when 1      => t_start_po <= '1';
+                when others => t_start_ke <= '1';
+            end case;
+            wait until rising_edge(clk);
+            t_start_ch <= '0';
+            t_start_po <= '0';
+            t_start_ke <= '0';
+        end procedure;
+
+        procedure top_report(name : string; ok : boolean) is
+        begin
+            if ok then
+                report "PASS  TOP " & name severity note;
+                passed := passed + 1;
+            else
+                report "FAIL  TOP " & name severity error;
+                errors := errors + 1;
+            end if;
+        end procedure;
+
         variable p_ok     : boolean;
         variable p_cycles : natural;
+        variable p_blocks : natural;
         variable sweep_bad : natural := 0;
         variable k_bad     : natural := 0;
+        variable w         : std_logic_vector(31 downto 0);
+        variable r512      : std_logic_vector(511 downto 0);
+        variable r256      : std_logic_vector(255 downto 0);
+        variable r128      : std_logic_vector(127 downto 0);
+        variable t_ok      : boolean;
+        variable off, n, left : natural;
 
     begin
         -- reset for a few clocks
@@ -423,12 +630,148 @@ begin
             end if;
         end loop;
         if k_bad = 0 then
-            report "PASS  Keccak-256 every message length 0..64 bytes (24 cycles each)" severity note;
+            report "PASS  Keccak-256 every message length 0..135 bytes (one block, 24 cycles each)" severity note;
             passed := passed + 1;
         else
-            report "FAIL  Keccak-256 lengths 0..64: " & integer'image(k_bad) & " wrong" severity error;
+            report "FAIL  Keccak-256 lengths 0..135: " & integer'image(k_bad) & " wrong" severity error;
             errors := errors + 1;
         end if;
+
+        -- ---- long messages (init / final control) ------------------------------
+        -- Poly1305: each long vector in 64-byte pieces and again in 16-byte pieces
+        for v in POLY_LONG_TVS'range loop
+            run_poly_long(POLY_LONG_TVS(v), 64, p_ok, p_cycles);
+            t_ok := p_ok;
+            n := p_cycles;
+            run_poly_long(POLY_LONG_TVS(v), 16, p_ok, p_cycles);
+            if t_ok and p_ok then
+                report "PASS  Poly1305 " & POLY_LONG_TVS(v).name & " (" & integer'image(POLY_LONG_TVS(v).len) &
+                       " bytes in 64-byte pieces: " & integer'image(n) & " cycles; in 16-byte pieces: " &
+                       integer'image(p_cycles) & " cycles)" severity note;
+                passed := passed + 1;
+            else
+                report "FAIL  Poly1305 " & POLY_LONG_TVS(v).name & " in pieces" severity error;
+                errors := errors + 1;
+            end if;
+        end loop;
+
+        -- Keccak: 136..500 bytes in 136-byte blocks, one summary line
+        k_bad := 0;
+        for v in KECCAK_LONG_TVS'range loop
+            run_keccak_long(KECCAK_LONG_TVS(v), p_ok, p_cycles, p_blocks);
+            if not p_ok or p_cycles /= 24 * p_blocks then
+                k_bad := k_bad + 1;
+                report "  Keccak-256 " & integer'image(KECCAK_LONG_TVS(v).len) & " bytes: " &
+                       integer'image(p_blocks) & " blocks, " & integer'image(p_cycles) & " cycles" severity error;
+            end if;
+        end loop;
+        if k_bad = 0 then
+            report "PASS  Keccak-256 long messages 136..500 bytes (2..4 blocks of 136 bytes, 24 cycles per block)" severity note;
+            passed := passed + 1;
+        else
+            report "FAIL  Keccak-256 long messages: " & integer'image(k_bad) & " wrong" severity error;
+            errors := errors + 1;
+        end if;
+
+        -- ---- TOP: the register interface, as the CPU uses it ---------------------
+        -- 1) Keccak, 135 bytes in one block, control register at its reset value (3)
+        t_ok := true;
+        for k in 0 to 33 loop
+            top_write(16#40# + k, KECCAK_TVS(KECCAK_NUM_NAMED + 135).msg(32 * k + 31 downto 32 * k));
+        end loop;
+        top_write_n(16#62#, 135);
+        top_start(2);
+        for k in 0 to 7 loop
+            top_read(16#68# + k, w);
+            r256(32 * k + 31 downto 32 * k) := w;
+        end loop;
+        if r256 /= KECCAK_TVS(KECCAK_NUM_NAMED + 135).digest then
+            report "TOP Keccak 135 bytes: got " & hex(r256) severity error;
+            t_ok := false;
+        end if;
+        top_report("Keccak-256 135 bytes, one block, reset control value", t_ok);
+
+        -- 2) ChaCha20 RFC 8439 2.4.2 block 1
+        t_ok := true;
+        for k in 0 to 7 loop top_write(16#00# + k, KEY_RFC(32 * k + 31 downto 32 * k)); end loop;
+        for k in 0 to 2 loop top_write(16#08# + k, NONCE_242(32 * k + 31 downto 32 * k)); end loop;
+        top_write_n(16#0B#, 1);
+        r512 := text64(SUNSCREEN(1 to 64));
+        for k in 0 to 15 loop top_write(16#10# + k, r512(32 * k + 31 downto 32 * k)); end loop;
+        top_start(0);
+        for k in 0 to 15 loop
+            top_read(16#10# + k, w);
+            r512(32 * k + 31 downto 32 * k) := w;
+        end loop;
+        if r512 /= EXP_242_1 then
+            report "TOP ChaCha20: got " & hex(r512) severity error;
+            t_ok := false;
+        end if;
+        top_report("ChaCha20 RFC 8439 2.4.2 block 1", t_ok);
+
+        -- 3) Keccak 300 bytes: two 136-byte blocks + a 28-byte final block
+        t_ok := true;
+        off := 0;
+        left := KECCAK_LONG_TVS(6).len;
+        assert left = 300 report "KECCAK_LONG_TVS(6) should be 300 bytes" severity failure;
+        loop
+            if left < 136 then n := left; else n := 136; end if;
+            for k in 0 to (n + 3) / 4 - 1 loop
+                top_write(16#40# + k, KECCAK_LONG_TVS(6).msg(8 * off + 32 * k + 31 downto 8 * off + 32 * k));
+            end loop;
+            top_write_n(16#62#, n);
+            if off = 0 and left >= 136 then top_write_n(16#64#, 1);   -- init, not final
+            elsif left >= 136 then          top_write_n(16#64#, 0);   -- middle block
+            else                            top_write_n(16#64#, 2);   -- final
+            end if;
+            top_start(2);
+            top_read(16#68#, w);                                       -- waits until the block is done
+            exit when left < 136;
+            off := off + 136;
+            left := left - 136;
+        end loop;
+        for k in 0 to 7 loop
+            top_read(16#68# + k, w);
+            r256(32 * k + 31 downto 32 * k) := w;
+        end loop;
+        if r256 /= KECCAK_LONG_TVS(6).digest then
+            report "TOP Keccak 300 bytes: got " & hex(r256) severity error;
+            t_ok := false;
+        end if;
+        top_report("Keccak-256 300 bytes in 3 blocks", t_ok);
+
+        -- 4) Poly1305 tag of the RFC 8439 2.8.2 AEAD MAC input, 64-byte pieces
+        t_ok := true;
+        for k in 0 to 7 loop
+            top_write(16#20# + k, POLY_LONG_TVS(POLY_LONG_TVS'high).key(32 * k + 31 downto 32 * k));
+        end loop;
+        off := 0;
+        left := POLY_LONG_TVS(POLY_LONG_TVS'high).len;
+        loop
+            if left > 64 then n := 64; else n := left; end if;
+            for k in 0 to (n + 3) / 4 - 1 loop
+                top_write(16#30# + k, POLY_LONG_TVS(POLY_LONG_TVS'high).msg(8 * off + 32 * k + 31 downto 8 * off + 32 * k));
+            end loop;
+            top_write_n(16#28#, n);
+            if off = 0 and left > 64 then top_write_n(16#2A#, 1);     -- init, not final
+            elsif left > 64 then          top_write_n(16#2A#, 0);     -- middle piece
+            else                          top_write_n(16#2A#, 2);     -- final
+            end if;
+            top_start(1);
+            top_read(16#2C#, w);                                       -- waits until the piece is done
+            exit when left <= 64;
+            off := off + 64;
+            left := left - 64;
+        end loop;
+        for k in 0 to 3 loop
+            top_read(16#2C# + k, w);
+            r128(32 * k + 31 downto 32 * k) := w;
+        end loop;
+        if r128 /= POLY_LONG_TVS(POLY_LONG_TVS'high).tag then
+            report "TOP Poly1305 AEAD MAC: got " & hex(r128) severity error;
+            t_ok := false;
+        end if;
+        top_report("Poly1305 RFC 8439 2.8.2 AEAD tag in 64-byte pieces", t_ok);
 
         report "==== SUMMARY: " & integer'image(passed) & " passed, " &
                integer'image(errors) & " failed ====" severity note;
