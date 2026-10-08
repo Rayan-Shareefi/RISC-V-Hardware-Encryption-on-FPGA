@@ -28,8 +28,8 @@
 #include "chacha20_poly1305.h"
 
 /* ============================ EDIT HERE ============================ */
-#define MY_MESSAGE   "Hello from our RISC-V crypto accelerator!"   /* 1..256 characters      */
-#define MY_AAD       "To: professor"                                /* 0..64 characters, sent in clear but protected by the tag */
+#define MY_MESSAGE   "test"   /* 1..256 characters      */
+#define MY_AAD       "AAD key"                                /* 0..64 characters, sent in clear but protected by the tag */
 #define MY_KEY       "my 32-byte secret key 4 ChaCha20"            /* exactly 32 characters  */
 #define MY_NONCE     "unique nonce"                                 /* exactly 12 characters  */
 #define MY_RUNS      1000                                           /* benchmark runs (10..1000) */
