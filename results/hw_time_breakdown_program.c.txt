@@ -1,0 +1,96 @@
+/* TEMPORARY measurement program (Step B, not part of the project):
+ * where do the cycles of one hardware run go? data in / start + compute / data out */
+#include <neorv32.h>
+#include <string.h>
+#include "demo_util.h"
+#include "crypto_accel.h"
+
+#define N 100
+#define CYC() neorv32_cpu_csr_read(CSR_MCYCLE)
+#define MARK(v) do { MEMORY_BARRIER(); v = CYC(); MEMORY_BARRIER(); } while (0)
+
+static uint32_t key[8], nonce[3], in[16], out[16], pkey[8], tag[4], dig[8];
+typedef struct { uint32_t a, b, c; } seg_t;
+
+static void show(const char *name, seg_t s, uint32_t ovh, uint32_t win, uint32_t wout, uint32_t core) {
+  uint32_t a = s.a / N - ovh, b = s.b / N - ovh, c = s.c / N - ovh;
+  neorv32_uart0_printf("  %s  in %u (%u words)  start+compute %u (core %u)  out %u (%u words)  total %u\n",
+                       name, a, win, b, core, c, wout, a + b + c);
+}
+
+int main(void) {
+  neorv32_rte_setup();
+  neorv32_uart0_setup(BAUD_RATE, 0);
+  for (int i = 0; i < 16; i++) in[i] = 0x01020304u * (i + 1);
+  for (int i = 0; i < 8; i++) { key[i] = 0x11111111u * i; pkey[i] = 0x0f0f0f0fu ^ i; }
+  for (int i = 0; i < 3; i++) nonce[i] = i;
+
+  uint32_t t0, t1, t2, t3, ovh = 0;
+  for (int n = 0; n < N; n++) { MARK(t0); MARK(t1); ovh += t1 - t0; }
+  ovh /= N;
+
+  /* one CFU write instruction alone (value already in a register) */
+  uint32_t w = 0;
+  for (int n = 0; n < N; n++) {
+    MARK(t0);
+    #pragma GCC unroll 16
+    for (int i = 0; i < 16; i++) CRYPTO_WRITE(KE_MSG + i, 0x5a5a5a5a);
+    MARK(t1); w += t1 - t0 - ovh;
+  }
+
+  seg_t ch = {0, 0, 0}, po = {0, 0, 0}, ke = {0, 0, 0};
+  chacha20_hw_set_key(key, nonce);
+  for (int n = 0; n < N; n++) {
+    MARK(t0);
+    CRYPTO_WRITE(CH_COUNTER, n);
+    #pragma GCC unroll 16
+    for (int i = 0; i < 16; i++) CRYPTO_WRITE(CH_DATA + i, in[i]);
+    MARK(t1);
+    CHACHA_START();
+    out[0] = CRYPTO_READ(CH_DATA);
+    MARK(t2);
+    #pragma GCC unroll 15
+    for (int i = 1; i < 16; i++) out[i] = CRYPTO_READ(CH_DATA + i);
+    MARK(t3);
+    ch.a += t1 - t0; ch.b += t2 - t1; ch.c += t3 - t2;
+  }
+  for (int n = 0; n < N; n++) {
+    MARK(t0);
+    #pragma GCC unroll 8
+    for (int i = 0; i < 8; i++) CRYPTO_WRITE(PO_KEY + i, pkey[i]);
+    CRYPTO_WRITE(PO_LEN, 64);
+    #pragma GCC unroll 16
+    for (int i = 0; i < 16; i++) CRYPTO_WRITE(PO_MSG + i, in[i]);
+    MARK(t1);
+    POLY_START();
+    tag[0] = CRYPTO_READ(PO_TAG);
+    MARK(t2);
+    #pragma GCC unroll 3
+    for (int i = 1; i < 4; i++) tag[i] = CRYPTO_READ(PO_TAG + i);
+    MARK(t3);
+    po.a += t1 - t0; po.b += t2 - t1; po.c += t3 - t2;
+  }
+  for (int n = 0; n < N; n++) {
+    MARK(t0);
+    #pragma GCC unroll 16
+    for (int i = 0; i < 16; i++) CRYPTO_WRITE(KE_MSG + i, in[i]);
+    CRYPTO_WRITE(KE_LEN, 64);
+    MARK(t1);
+    KECCAK_START();
+    dig[0] = CRYPTO_READ(KE_DIGEST);
+    MARK(t2);
+    #pragma GCC unroll 7
+    for (int i = 1; i < 8; i++) dig[i] = CRYPTO_READ(KE_DIGEST + i);
+    MARK(t3);
+    ke.a += t1 - t0; ke.b += t2 - t1; ke.c += t3 - t2;
+  }
+
+  neorv32_uart0_printf("\nBREAKDOWN of one hardware run, CPU cycles (average of %u runs, timer overhead %u removed)\n", N, ovh);
+  neorv32_uart0_printf("  one CFU write instruction alone: %u cycles\n", w / (16 * N));
+  show("ChaCha20 ", ch, ovh, 17, 16, 10);
+  show("Poly1305 ", po, ovh, 25, 4, 90);
+  show("Keccak   ", ke, ovh, 17, 8, 24);
+  neorv32_uart0_printf("BREAKDOWN DONE\n");
+  while (1);
+  return 0;
+}

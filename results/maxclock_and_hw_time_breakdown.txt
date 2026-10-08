@@ -1,0 +1,52 @@
+Step B - maximum clock and where the hardware time goes (2026-10-08)
+=====================================================================
+
+1) Maximum clock (Fmax)
+-----------------------
+Method: Vivado 2025.2 synth + place + phys_opt + route, in memory (outside the
+project), same sources, only the clock target in the XDC copy was tightened.
+A run at 12 MHz cannot show the real limit (Vivado does not push the wiring), so
+each design was built for a tight target and checked that it still meets timing.
+
+                                 target      worst slack   result
+CPU alone (no crypto, baseline)  125 MHz     +0.337 ns     meets 125 MHz  (Fmax about 130 MHz)
+CPU + ChaCha20/Poly1305/Keccak    40 MHz     +0.195 ns     meets  40 MHz  (Fmax about 40 MHz)
+Board clock used                  12 MHz     +52.5 ns      lots of margin
+
+Slowest path in the full design: inside ChaCha20 (u_chacha, x_reg -> out_r_reg),
+24.7 ns, 68 logic levels = one whole double round (8 quarter-rounds of 32-bit
+add/xor/rotate) in ONE clock, which is why ChaCha20 needs only 10 cycles per block.
+Worst paths into the other units at 40 MHz: Poly1305 slack +11.9 ns (12.5 ns path),
+Keccak slack +9.5 ns (14.8 ns path) -> they would allow about 65-80 MHz.
+
+Meaning: adding the accelerators lowers the maximum clock from about 130 MHz to
+about 40 MHz (timing overhead). Doing one ChaCha20 round per clock instead of a
+double round would roughly halve that path (20 cycles per block instead of 10,
+about +5% per HW run) - a trade-off for the report, not done.
+Reports: maxclock_full_design_timing.rpt, maxclock_cpu_only_timing.rpt.
+
+2) Where the cycles of ONE hardware run go (board, 12 MHz, average of 100 runs)
+------------------------------------------------------------------------------
+Measured with the CPU cycle counter around each part (temporary test program,
+timer overhead of 3 cycles removed). 64-byte message each.
+
+               data in            start + compute     data out          total   computing
+ChaCha20       131 (17 words)     16  (core 10)       45 (16 words)     192     ~5%
+Poly1305       217 (25 words)     97  (core 90)       18 (4 words)      332     ~27%
+Keccak-256     149 (17 words)     31  (core 24)       30 (8 words)      210     ~11%
+
+- One custom "crypto.write" instruction alone takes 3 cycles; loading the word
+  from data memory first adds about 4-5 cycles more.
+- The benchmark per-run numbers (ChaCha20 280-285, Poly1305 370-384, Keccak 253-306)
+  also include the benchmark loop and copying the message buffers.
+- So the hardware itself is very fast; most of the time is the CPU moving data
+  one 32-bit word per instruction. Faster transfer (2 words per instruction, or
+  the accelerator reading memory itself) would be the next step to raise the
+  speedup - not required, not done.
+
+Raw board output:
+BREAKDOWN of one hardware run, CPU cycles (average of 100 runs, timer overhead 3 removed)
+  one CFU write instruction alone: 3 cycles
+  ChaCha20   in 131 (17 words)  start+compute 16 (core 10)  out 45 (16 words)  total 192
+  Poly1305   in 217 (25 words)  start+compute 97 (core 90)  out 18 (4 words)  total 332
+  Keccak     in 149 (17 words)  start+compute 31 (core 24)  out 30 (8 words)  total 210
