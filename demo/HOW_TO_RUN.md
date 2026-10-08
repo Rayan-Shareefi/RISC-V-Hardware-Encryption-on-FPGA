@@ -156,38 +156,45 @@ The best single check: the site does the whole RFC 8439 recipe itself (one-time 
 
 ## 7. Encrypt a picture or file (`file_crypto`)
 
-Needs the bitstream with 128 KB data memory (the current `.bit`, step 1). A test picture is in `demo\test_picture.png` (54 KB).
+Needs the bitstream with 128 KB data memory (the current `.bit`, step 1). A test picture is in `demo\test_picture.png` (54 KB). Files go to and from the board with Tera Term's **YMODEM** (*File → Transfer → YMODEM*), so nothing has to be copied by hand.
+
+**Once:** choose where Tera Term saves received files: *File → Change directory…* → e.g. `D:\Graduation-Project\demo`.
 
 1. Build and upload as usual: `make APP=file_crypto clean exe` → Tera Term at 19200 → BTN0, any key, `u`, send `neorv32_exe.bin` (Binary), `e`.
 2. The board says *"Set Tera Term to 115200 now"*: **Setup → Serial port → Speed 115200 → OK**, then press any key.
-3. Before a long output, start saving it: *File → Log…* → file name → *Save*.
-4. Type **1** (encrypt) → *File → Send file…* → tick **Binary** → choose the picture. LD1/LD2 blink while it arrives; 1 s after the last byte the board starts.
-5. The board prints:
+3. **Encrypt:** type **1** → *File → Transfer → YMODEM → Send…* → choose the picture → *Open*.
+   - While the board waits, it prints a few letters `C`. That is normal.
+4. The board prints **ENCRYPTION FINISHED**:
    - the Keccak-256 hash of your file;
-   - the checks (SW == HW for all three);
-   - a **SUMMARY** (software vs hardware time on your file, and the speedup);
-   - the Poly1305 tag;
-   - the **encrypted file** (ciphertext + 16-byte tag) in hex between `-----BEGIN ENCRYPTED FILE-----` and `-----END ENCRYPTED FILE-----`.
-6. *File → Stop Logging*.
+   - the ciphertext fingerprints (SW and HW, equal) and the tags (SW and HW, equal);
+   - a **SUMMARY**: software vs hardware time for ChaCha20, Poly1305, Keccak-256, the TOTAL and the speedups.
+5. When it says *"Save the result now"*: *File → Transfer → YMODEM → Receive*. Two files appear in your folder:
+   - `<name>.enc`: the encrypted file (ciphertext + 16-byte tag);
+   - `<name>.enc.hex.txt`: the same bytes as hex text, if you want to read them.
+6. **Decrypt:** type **2** → *YMODEM → Send…* → choose `<name>.enc`.
+   - The board checks the tag first: **REJECTED** if the file was changed, and nothing is decrypted.
+   - Otherwise it prints **DECRYPTION FINISHED**, the hash (equal to step 4) and a **SUMMARY** for decryption.
+   - Then *YMODEM → Receive* gives you **`decrypted_<name>`**. It opens like the original picture, and your original file is never overwritten.
 
-**See the picture again with CyberChef (no board needed):**
-- Copy the hex lines between BEGIN and END (from the log file) into the CyberChef input.
-- Recipe: **From Hex** → **ChaCha** (Key `my 32-byte secret key 4 ChaCha20` UTF8, Nonce `unique nonce` UTF8, Counter **1**, Rounds 20, Input **Raw**, Output **Raw**) → **Render Image**. Your picture appears.
-- The 16 tag bytes at the end don't stop the picture from showing.
-- To save it: click the output's save button (it downloads the decrypted file).
+Why only one `.enc` file and not one from software and one from hardware? Both give **exactly the same bytes**: same key, nonce and algorithm. The board checks this (the SW and HW fingerprints must be equal), so one file is enough.
 
-**Decrypt on the board (checks the tag):**
-1. In CyberChef: **From Hex** only, then click the save button: this downloads the encrypted file (e.g. `download.dat`).
-2. On the board type **2** → *Send file…* → **Binary** → choose that file.
-3. The board checks the tag:
-   - **Tag OK**: it decrypts and prints the Keccak-256 hash (equal to step 5) and the decrypted file in hex between BEGIN/END. In CyberChef: **From Hex** → **Render Image** shows the picture.
-   - **REJECTED**: the file was changed or the key/nonce is wrong, so nothing is decrypted.
+**Check it yourself in CyberChef.** Each link opens the recipe ready; then click the folder icon above the input (*"Open file as input"*) and choose the file:
 
-**Check the hash online:** CyberChef → click the folder icon above the input ("Open file as input") → your original picture → **Keccak**, size 256. The result must equal the board's hash.
+| What | Link | Input file | Must give |
+|---|---|---|---|
+| Decrypt and **show the picture** | [decrypt → picture](https://gchq.github.io/CyberChef/#recipe=Drop_bytes(-16,16,false)ChaCha(%7B'option':'UTF8','string':'my%2032-byte%20secret%20key%204%20ChaCha20'%7D,%7B'option':'UTF8','string':'unique%20nonce'%7D,1,'20','Raw','Raw')Render_Image('Raw')) | `<name>.enc` | your picture |
+| Decrypt **to a file** | [decrypt → file](https://gchq.github.io/CyberChef/#recipe=Drop_bytes(-16,16,false)ChaCha(%7B'option':'UTF8','string':'my%2032-byte%20secret%20key%204%20ChaCha20'%7D,%7B'option':'UTF8','string':'unique%20nonce'%7D,1,'20','Raw','Raw')) | `<name>.enc` | the original file (save it with the output's save button) |
+| **Encrypt** yourself (fingerprint) | [encrypt → Keccak](https://gchq.github.io/CyberChef/#recipe=ChaCha(%7B'option':'UTF8','string':'my%2032-byte%20secret%20key%204%20ChaCha20'%7D,%7B'option':'UTF8','string':'unique%20nonce'%7D,1,'20','Raw','Raw')Keccak('256')) | the original picture | the board's "Keccak-256 of the ciphertext" |
+| **Encrypt** yourself (hex) | [encrypt → hex](https://gchq.github.io/CyberChef/#recipe=ChaCha(%7B'option':'UTF8','string':'my%2032-byte%20secret%20key%204%20ChaCha20'%7D,%7B'option':'UTF8','string':'unique%20nonce'%7D,1,'20','Raw','Raw')To_Hex('None',0)) | the original picture | the same hex as `<name>.enc.hex.txt` (without the last 32 characters = the tag) |
+| **Hash** of a file | [Keccak-256](https://gchq.github.io/CyberChef/#recipe=Keccak('256')) | the original picture | the board's "Keccak-256 of the original file" |
+
+- `Drop bytes -16` removes the 16-byte tag at the end before decrypting.
+- If you changed `FILE_KEY` / `FILE_NONCE` in `file_crypto.c`, change them in the ChaCha step too.
+- The Poly1305 tag is checked by the board (step 6).
 
 When you are done: press **BTN0** and set Tera Term back to **19200** (the bootloader always uses 19200).
 
-Results of my tests (7 files, 1 byte to 120 KB, all correct; a 120 KB file: ChaCha20 70.5×, Poly1305 73.8×, Keccak-256 382×, total 153×): `results\file_crypto_board.txt`.
+Results of my tests are in `results\file_crypto_board.txt`: 7 files from 1 byte to 120 KB, sent with real Tera Term YMODEM, all correct.
 
 ## 8. Optional: watch the hardware in the Vivado simulator
 
@@ -209,4 +216,5 @@ In Vivado: **Run Simulation → Run Behavioral Simulation**.
 | Build error `MY_KEY must be exactly 32 characters` | Key 32, nonce 12, message 1..64 characters |
 | `file_crypto`: strange characters after "Set Tera Term to 115200" | Tera Term is still at 19200: change the speed (section 7, step 2). Or press BTN0, set 19200, start again |
 | `file_crypto`: "The file is too big" | Largest file 122880 bytes (120 KB); use a smaller picture |
+| `file_crypto`: "No file arrived" / "not saved" | Start *YMODEM → Send / Receive* within 2 minutes after the board asks; then choose the menu item again |
 | No bootloader text after using `file_crypto` | Tera Term is still at 115200: set it back to **19200**, then press BTN0 |
