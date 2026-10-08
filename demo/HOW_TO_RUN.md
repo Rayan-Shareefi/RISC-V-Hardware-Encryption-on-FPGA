@@ -120,28 +120,33 @@ To set it up by hand, use the operation **ChaCha** with these fields:
 - By hand: operation **Keccak**, Size **256**. Don't pick "SHA3", which gives a different hash.
 - Example: "test" gives `9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658`.
 
-### Poly1305: javainuse.com/poly1305mac
+### Poly1305: [javainuse.com/poly1305mac](https://www.javainuse.com/poly1305mac)
 
 CyberChef has no Poly1305. In ChaCha20-Poly1305 the board prints the two things Poly1305 needs. Use the "Generate MAC" box on javainuse:
 
 | Field | What to type |
 |---|---|
 | 32-byte Key (Hex) | the **Poly1305 one-time key** line (default: `6d839942b5badf7e9a29168e9fc7c261eb0a10e3d2f159cb636f168d9c9400c6`) |
-| Message | the **Poly1305 MAC input** hex (all its lines joined) |
+| Message | the **Poly1305 MAC input** hex: all its lines joined into one line. **Not** the ciphertext! |
 | Input Format | **Hexadecimal** |
 
-The MAC must equal the board's tag (default: `9be6653dbe0a60a59960267bb226291a`).
+The MAC must equal the board's **Poly1305 tag** (default: `9be6653dbe0a60a59960267bb226291a`).
+- The tag is the only result to compare; the one-time key and the MAC input are the two inputs.
+- If you paste only the ciphertext you get a different tag: the standard signs AAD | zeros | ciphertext | zeros | lengths.
 - If you want to test the website itself first, use the official RFC 8439 example:
   - key `85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b`
   - message `Cryptographic Forum Research Group` (UTF-8)
   - the tag must be `a8061dc1305136c6c22b8baf0c0127a9`
 
-### ChaCha20-Poly1305 all at once: lddgo.net/en/encrypt/chacha20-encrypt-decrypt (not tested by me yet)
+### ChaCha20-Poly1305 all at once: lddgo.net/en/encrypt/chacha20-encrypt-decrypt (tested 2026-10-08: matches the board)
 
-- Algorithm **ChaCha20Poly1305**.
-- Password = `MY_KEY` and Nonce = `MY_NONCE` (format "string"); AAD = `MY_AAD`; Output format **hex**.
-- The output should be the ciphertext followed by the 16-byte tag.
-- Test the site first with the official RFC 8439 2.8.2 example (it is in `demo_chacha20_poly1305`, part 1b):
+The best single check: the site does the whole RFC 8439 recipe itself (one-time key, encryption, MAC input, tag).
+- Algorithm **ChaCha20Poly1305**, Charset UTF-8.
+- Password = `MY_KEY` and Nonce = `MY_NONCE` (format "string"); Input format "string" (type the message); AAD = `MY_AAD` (format "string"); Output format **hex**.
+- Click **Encrypt**.
+  - **Authenticate Tag** must equal the board's Poly1305 tag.
+  - **Output Result** must equal the board's ChaCha20 ciphertext.
+- To test the site with the official RFC 8439 2.8.2 example (it is in `demo_chacha20_poly1305`, part 1b), use these values:
   - key hex `808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f`
   - nonce hex `070000004041424344454647`
   - AAD hex `50515253c0c1c2c3c4c5c6c7`
