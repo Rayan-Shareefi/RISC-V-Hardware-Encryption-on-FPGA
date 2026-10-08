@@ -1,0 +1,54 @@
+demo_keccak.c on the board (neorv32_crypto.bit, 12 MHz), FAST Keccak software (unrolled, fixed rotations), 2026-10-08
+(this run still printed the old hint "about 25 s"; the hint now says 11 s)
+(only the last state of each progress bar is kept; in Tera Term it updates in place)
+
+=================================================================
+ DEMO 3: Keccak-256 hashing - software vs hardware
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+[1] Official test: Keccak-256 known values
+  Message:   "test"
+  Expected:  9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658
+  Software:  9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658  PASS  (130221 cycles)
+  Hardware:  9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658  PASS  (125 cycles)
+  Message:   "" (empty message)
+  Expected:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470
+  Software:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470  PASS  (130176 cycles)
+  Hardware:  c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470  PASS  (127 cycles)
+
+[2] Your message
+  Type a message (up to 64 characters) and press Enter,
+  or wait 20 s for the default message:
+  > Hello Keccak
+  Message:        "Hello Keccak"  (12 bytes)
+  Keccak-256 (SW):  bb62e2e3a387aa793dce3747348354b8ca3fd5d4dff2e1246579858de5103682   130265 cycles
+  Keccak-256 (HW):  bb62e2e3a387aa793dce3747348354b8ca3fd5d4dff2e1246579858de5103682   179 cycles
+  Software == hardware: YES
+
+  Changed 1 bit:  "Hello Keccaj"
+  Keccak-256 (HW):  77b39f6ee045965570a6461d5bc923ed301e712444cfaf10544a479aa12efe17
+  125 of 256 hash bits changed (about half = good hash)
+
+[3] Benchmark: 1000 hashes of a 64-byte message
+  LD1 = software running, LD2 = hardware running
+  (software needs about 25 s - this CPU has no fast shifter for 64-bit rotations)
+
+  SW [####################] 1000/1000  10871.800 ms
+
+  HW [####################] 1000/1000  21.182 ms
+  (checking 1000 different messages also needs about 25 s of software)
+
+  Checking SW == HW: 1000/1000 messages, 0 differences    PASS
+
+[4] Results: time from first input to last output (1 us counter)
+  Software  10871.800 ms   130461270 cycles   130461 cycles/run
+  Hardware  21.182 ms   253670 cycles   253 cycles/run
+  Speedup Keccak-256: 514.3x faster in hardware
+  The Keccak hardware core needs 24 cycles per hash (one round per clock);
+  the rest is the CPU moving 64 bytes in and 32 bytes out.
+
+ALL CHECKS PASSED
+
+Press Enter to run the demo again.

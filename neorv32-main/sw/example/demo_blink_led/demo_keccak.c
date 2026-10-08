@@ -194,11 +194,11 @@ int main(void) {
 
     demo_step("3] Benchmark: 1000 hashes of a 64-byte message");
     neorv32_uart0_printf("  LD1 = software running, LD2 = hardware running\n");
-    neorv32_uart0_printf("  (software needs about 25 s - this CPU has no fast shifter for 64-bit rotations)\n");
+    neorv32_uart0_printf("  (software needs about 11 s - this CPU has no fast shifter for 64-bit rotations)\n");
     meas_t sw = run_sw();
     meas_t hw = run_hw();
     leds(LED_SW | LED_HW);
-    neorv32_uart0_printf("  (checking 1000 different messages also needs about 25 s of software)\n");
+    neorv32_uart0_printf("  (checking 1000 different messages also needs about 11 s of software)\n");
     fails += check_all();
     leds(LED_IDLE);
 

@@ -131,7 +131,7 @@ int main(void) {
 
     int fails = check_vectors();
 
-    neorv32_uart0_printf("\nRunning %u hashes of a 64-byte message (software takes about 25 s)...\n", (uint32_t)RUNS);
+    neorv32_uart0_printf("\nRunning %u hashes of a 64-byte message (software takes about 11 s)...\n", (uint32_t)RUNS);
     meas_t sw = bench_sw();
     meas_t hw = bench_hw();
 

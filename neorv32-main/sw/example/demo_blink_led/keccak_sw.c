@@ -5,6 +5,12 @@
  * Same structure as poly1305.c: this file holds the algorithm only,
  * the testbench (main) is in keccak_test.c.
  *
+ * Fast version (2026-10-08): the rho + pi step is written out lane by lane with
+ * fixed rotation amounts, and theta/chi use fixed lane numbers. The first
+ * version used "% 5" and rotations by a variable amount, which this small CPU
+ * does very slowly, so the SW-vs-HW comparison was unfair to the software.
+ * Same results; the old version is kept in "old c files/OLD_keccak_sw.c.txt".
+ *
  * State: 25 lanes of 64 bits, lane index = x + 5*y
  * (in the VHDL circuit the same lane is state(y)(x)).
  *
@@ -30,41 +36,65 @@ static const uint64_t RC[24] = {
     0x8000000080008081ULL, 0x8000000000008080ULL, 0x0000000080000001ULL, 0x8000000080008008ULL
 };
 
-/* rotation offsets r[x][y] for the rho step */
-static const int RHO[5][5] = {
-    { 0, 36,  3, 41, 18},
-    { 1, 44, 10, 45,  2},
-    {62,  6, 43, 15, 61},
-    {28, 55, 25, 21, 56},
-    {27, 20, 39,  8, 14}
-};
-
 void keccak_f1600(uint64_t A[25]) {
-    uint64_t C[5], D[5], B[25];
-    int round, x, y;
+    uint64_t C0, C1, C2, C3, C4, D0, D1, D2, D3, D4, B[25];
+    int round, y;
 
     for (round = 0; round < 24; round++) {
-        /* theta */
-        for (x = 0; x < 5; x++)
-            C[x] = A[x] ^ A[x + 5] ^ A[x + 10] ^ A[x + 15] ^ A[x + 20];
-        for (x = 0; x < 5; x++)
-            D[x] = C[(x + 4) % 5] ^ ROTL64(C[(x + 1) % 5], 1);
-        for (x = 0; x < 5; x++)
-            for (y = 0; y < 5; y++)
-                A[x + 5 * y] ^= D[x];
+        /* theta: C[x] = column parity, D[x] = C[x-1] ^ rot(C[x+1], 1) */
+        C0 = A[0] ^ A[5] ^ A[10] ^ A[15] ^ A[20];
+        C1 = A[1] ^ A[6] ^ A[11] ^ A[16] ^ A[21];
+        C2 = A[2] ^ A[7] ^ A[12] ^ A[17] ^ A[22];
+        C3 = A[3] ^ A[8] ^ A[13] ^ A[18] ^ A[23];
+        C4 = A[4] ^ A[9] ^ A[14] ^ A[19] ^ A[24];
+        D0 = C4 ^ ROTL64(C1, 1);
+        D1 = C0 ^ ROTL64(C2, 1);
+        D2 = C1 ^ ROTL64(C3, 1);
+        D3 = C2 ^ ROTL64(C4, 1);
+        D4 = C3 ^ ROTL64(C0, 1);
+        for (y = 0; y < 25; y += 5) {
+            A[y + 0] ^= D0;
+            A[y + 1] ^= D1;
+            A[y + 2] ^= D2;
+            A[y + 3] ^= D3;
+            A[y + 4] ^= D4;
+        }
 
-        /* rho + pi:  B[y, 2x+3y] = rot(A[x,y], r[x,y]) */
-        for (x = 0; x < 5; x++)
-            for (y = 0; y < 5; y++) {
-                int r = RHO[x][y];
-                uint64_t v = A[x + 5 * y];
-                B[y + 5 * ((2 * x + 3 * y) % 5)] = (r == 0) ? v : ROTL64(v, r);
-            }
+        /* rho + pi:  B[y, 2x+3y] = rot(A[x,y], r[x,y]), every lane written out */
+        B[ 0] = A[ 0];
+        B[ 1] = ROTL64(A[ 6], 44);
+        B[ 2] = ROTL64(A[12], 43);
+        B[ 3] = ROTL64(A[18], 21);
+        B[ 4] = ROTL64(A[24], 14);
+        B[ 5] = ROTL64(A[ 3], 28);
+        B[ 6] = ROTL64(A[ 9], 20);
+        B[ 7] = ROTL64(A[10],  3);
+        B[ 8] = ROTL64(A[16], 45);
+        B[ 9] = ROTL64(A[22], 61);
+        B[10] = ROTL64(A[ 1],  1);
+        B[11] = ROTL64(A[ 7],  6);
+        B[12] = ROTL64(A[13], 25);
+        B[13] = ROTL64(A[19],  8);
+        B[14] = ROTL64(A[20], 18);
+        B[15] = ROTL64(A[ 4], 27);
+        B[16] = ROTL64(A[ 5], 36);
+        B[17] = ROTL64(A[11], 10);
+        B[18] = ROTL64(A[17], 15);
+        B[19] = ROTL64(A[23], 56);
+        B[20] = ROTL64(A[ 2], 62);
+        B[21] = ROTL64(A[ 8], 55);
+        B[22] = ROTL64(A[14], 39);
+        B[23] = ROTL64(A[15], 41);
+        B[24] = ROTL64(A[21],  2);
 
-        /* chi */
-        for (x = 0; x < 5; x++)
-            for (y = 0; y < 5; y++)
-                A[x + 5 * y] = B[x + 5 * y] ^ ((~B[(x + 1) % 5 + 5 * y]) & B[(x + 2) % 5 + 5 * y]);
+        /* chi: A[x,y] = B[x,y] ^ (~B[x+1,y] & B[x+2,y]) */
+        for (y = 0; y < 25; y += 5) {
+            A[y + 0] = B[y + 0] ^ (~B[y + 1] & B[y + 2]);
+            A[y + 1] = B[y + 1] ^ (~B[y + 2] & B[y + 3]);
+            A[y + 2] = B[y + 2] ^ (~B[y + 3] & B[y + 4]);
+            A[y + 3] = B[y + 3] ^ (~B[y + 4] & B[y + 0]);
+            A[y + 4] = B[y + 4] ^ (~B[y + 0] & B[y + 1]);
+        }
 
         /* iota */
         A[0] ^= RC[round];
