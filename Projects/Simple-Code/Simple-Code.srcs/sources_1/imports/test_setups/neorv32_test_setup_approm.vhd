@@ -22,7 +22,7 @@ entity neorv32_test_setup_approm is
     CLOCK_FREQUENCY : natural := 12000000;
     BOOT_MODE       : natural := 0;          -- 0 = bootloader (FPGA), 2 = IMEM image (simulation)
     IMEM_SIZE       : natural := 32*1024;    -- 32 KB (was 16 KB) for the ChaCha20-Poly1305 programs
-    DMEM_SIZE       : natural := 8*1024
+    DMEM_SIZE       : natural := 128*1024    -- 128 KB (was 8 KB) so file_crypto can hold a ~120 KB file
   );
   port (
     clk_i       : in  std_ulogic;
@@ -59,7 +59,8 @@ begin
     IO_GPIO_NUM      => 8,
     IO_CLINT_EN      => true,
     IO_UART0_EN      => true,
-    IO_CFS_EN        => true,           -- 1 microsecond counter (CFS)
+    IO_UART0_RX_FIFO => 64,             -- 64-byte receive buffer (file_crypto at 115200 baud)
+    IO_CFS_EN       => true,           -- 1 microsecond counter (CFS)
     XBUS_EN          => false           -- no external bus devices
   )
   port map (

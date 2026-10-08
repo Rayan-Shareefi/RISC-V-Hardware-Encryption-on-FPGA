@@ -45,6 +45,7 @@ After unplugging the board, repeat steps 3–4 (the FPGA forgets it).
 | `demo_chacha20_poly1305` | **ChaCha20-Poly1305 (RFC 8439)**: official tests + your typed message + tamper test + benchmark |
 | `demo_keccak` | Keccak-256: known values + a 300-byte message + your typed message + benchmark |
 | `crypto_hw_test` | Quick hardware self-test of everything (2 s) |
+| `file_crypto` | **Encrypt / decrypt a picture or any file** (up to 120 KB), SW vs HW time on the real file. Runs at **115200 baud**: see section 7 |
 
 ## 3. Tera Term: send and run
 
@@ -153,7 +154,42 @@ The best single check: the site does the whole RFC 8439 recipe itself (one-time 
   - message "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
   - the result must start `d31a8d34…` and the tag must be `1ae10b594f09e26a7e902ecbd0600691`.
 
-## 7. Optional: watch the hardware in the Vivado simulator
+## 7. Encrypt a picture or file (`file_crypto`)
+
+Needs the bitstream with 128 KB data memory (the current `.bit`, step 1). A test picture is in `demo\test_picture.png` (54 KB).
+
+1. Build and upload as usual: `make APP=file_crypto clean exe` → Tera Term at 19200 → BTN0, any key, `u`, send `neorv32_exe.bin` (Binary), `e`.
+2. The board says *"Set Tera Term to 115200 now"*: **Setup → Serial port → Speed 115200 → OK**, then press any key.
+3. Before a long output, start saving it: *File → Log…* → file name → *Save*.
+4. Type **1** (encrypt) → *File → Send file…* → tick **Binary** → choose the picture. LD1/LD2 blink while it arrives; 1 s after the last byte the board starts.
+5. The board prints:
+   - the Keccak-256 hash of your file;
+   - the checks (SW == HW for all three);
+   - a **SUMMARY** (software vs hardware time on your file, and the speedup);
+   - the Poly1305 tag;
+   - the **encrypted file** (ciphertext + 16-byte tag) in hex between `-----BEGIN ENCRYPTED FILE-----` and `-----END ENCRYPTED FILE-----`.
+6. *File → Stop Logging*.
+
+**See the picture again with CyberChef (no board needed):**
+- Copy the hex lines between BEGIN and END (from the log file) into the CyberChef input.
+- Recipe: **From Hex** → **ChaCha** (Key `my 32-byte secret key 4 ChaCha20` UTF8, Nonce `unique nonce` UTF8, Counter **1**, Rounds 20, Input **Raw**, Output **Raw**) → **Render Image**. Your picture appears.
+- The 16 tag bytes at the end don't stop the picture from showing.
+- To save it: click the output's save button (it downloads the decrypted file).
+
+**Decrypt on the board (checks the tag):**
+1. In CyberChef: **From Hex** only, then click the save button: this downloads the encrypted file (e.g. `download.dat`).
+2. On the board type **2** → *Send file…* → **Binary** → choose that file.
+3. The board checks the tag:
+   - **Tag OK**: it decrypts and prints the Keccak-256 hash (equal to step 5) and the decrypted file in hex between BEGIN/END. In CyberChef: **From Hex** → **Render Image** shows the picture.
+   - **REJECTED**: the file was changed or the key/nonce is wrong, so nothing is decrypted.
+
+**Check the hash online:** CyberChef → click the folder icon above the input ("Open file as input") → your original picture → **Keccak**, size 256. The result must equal the board's hash.
+
+When you are done: press **BTN0** and set Tera Term back to **19200** (the bootloader always uses 19200).
+
+Results of my tests (7 files, 1 byte to 120 KB, all correct; a 120 KB file: ChaCha20 70.5×, Poly1305 73.8×, Keccak-256 382×, total 153×): `results\file_crypto_board.txt`.
+
+## 8. Optional: watch the hardware in the Vivado simulator
 
 In Vivado: **Run Simulation → Run Behavioral Simulation**.
 - The waveform shows the ChaCha20, Poly1305 and Keccak signals.
@@ -171,3 +207,6 @@ In Vivado: **Run Simulation → Run Behavioral Simulation**.
 | `make: command not found` | Open a new VS Code terminal |
 | Upload stops with an error (program too big) | The FPGA still has an old bitstream with 16 KB program memory: program the new `.bit` (step 1) |
 | Build error `MY_KEY must be exactly 32 characters` | Key 32, nonce 12, message 1..64 characters |
+| `file_crypto`: strange characters after "Set Tera Term to 115200" | Tera Term is still at 19200: change the speed (section 7, step 2). Or press BTN0, set 19200, start again |
+| `file_crypto`: "The file is too big" | Largest file 122880 bytes (120 KB); use a smaller picture |
+| No bootloader text after using `file_crypto` | Tera Term is still at 115200: set it back to **19200**, then press BTN0 |
