@@ -1,0 +1,712 @@
+file_crypto, new version (2026-10-13): ChaCha20-Poly1305 only (no Keccak); BMP pictures keep their
+header in clear (it is the AAD, protected by the tag), only the pixels are encrypted.
+Board Cmod A7-35T, bitstream demo/neorv32_crypto.bit, 12 MHz. Files sent and received with the real
+Tera Term 5 YMODEM (driven by a Tera Term macro for this test).
+
+Independent checks (Python, scripts/gen_poly1305_vectors.py AEAD reference, AAD = BMP header):
+  file               header  encrypted file == reference  header kept  .hex.txt == hex  decrypted == original
+  test_picture.bmp     54    yes                          yes          yes              yes
+  test_picture.png      0    yes                          -            yes              yes
+  t001.bin              0    yes                          -            yes              yes
+  t063.bin              0    yes                          -            yes              yes
+  t064.bin              0    yes                          -            yes              yes
+  t065.bin              0    yes                          -            yes              yes
+  t136.bin              0    yes                          -            yes              yes
+  max_122880.bin        0    yes                          -            yes              yes
+  tampered_pixel.enc.bmp  (1 pixel byte changed)   -> REJECTED, nothing decrypted
+  tampered_header.enc.bmp (1 header byte changed)  -> REJECTED, nothing decrypted (the header is protected)
+  toobig_123000.bin                                -> refused ("The file is too big")
+  test_picture.enc.bmp opens as a picture (noise); decrypted_test_picture.bmp is identical to the original.
+
+Complete board output (Tera Term log):
+
+
+
+NEORV32 Bootloader
+build: Mar 28 2026
+
+Auto-boot in 8s. Press any key to abort.
+Aborted.
+
+Type 'h' for help.
+CMD:> u
+Awaiting neorv32_exe.bin... OK
+CMD:> e
+Booting from 0x00000000...
+
+
+=================================================================
+ FILE CRYPTO - encrypt / decrypt a picture or any file (ChaCha20-Poly1305)
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+Files are big, so this program uses 115200 baud.
+Set Tera Term to 115200 now (Setup > Serial port > Speed), then press any key.
+(Afterwards: press BTN0 and set Tera Term back to 19200 for the bootloader.)
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "test_picture.bmp": 112374 bytes.
+BMP picture: the 54-byte header stays in clear (protected by the tag),
+the 112320 bytes of pixels are encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): 8e85402dda6dcdb2748d6acb37f54822
+Poly1305 tag (HW): 8e85402dda6dcdb2748d6acb37f54822
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 112320 bytes encrypted + 54-byte header (AAD), one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20      2949.302 ms    35391588      41.569 ms     498793    71.0x
+  Poly1305      1665.676 ms    19988073      22.433 ms     269165    74.3x
+  -----------------------------------------------------------------------
+  TOTAL         4614.978 ms    55379661      64.002 ms     767958    72.1x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "test_picture.enc.bmp" (112390 bytes)
+  -> "test_picture.enc.bmp.hex.txt" (231806 bytes)
+
+Done. Tera Term saved "test_picture.enc.bmp" and "test_picture.enc.bmp.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "test_picture.enc.bmp": 112390 bytes.
+BMP picture: the 54-byte header stays in clear (protected by the tag),
+the 112320 bytes of pixels are encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          8e85402dda6dcdb2748d6acb37f54822
+Recomputed tag (SW):   8e85402dda6dcdb2748d6acb37f54822
+Recomputed tag (HW):   8e85402dda6dcdb2748d6acb37f54822
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 112320 bytes encrypted + 54-byte header (AAD), one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20      2949.303 ms    35391587      41.569 ms     498793    71.0x
+  Poly1305      1665.676 ms    19988069      22.433 ms     269160    74.3x
+  -----------------------------------------------------------------------
+  TOTAL         4614.979 ms    55379656      64.002 ms     767953    72.1x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_test_picture.bmp" (112374 bytes)
+
+Done. Tera Term saved "decrypted_test_picture.bmp"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "test_picture.png": 53848 bytes.
+Not a BMP picture: the whole file (53848 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): 68a580d45db251e75b365d891493626c
+Poly1305 tag (HW): 68a580d45db251e75b365d891493626c
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 53848 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20      1414.884 ms    16978580      19.953 ms     239398    70.9x
+  Poly1305       798.425 ms     9581063      10.778 ms     129305    74.1x
+  -----------------------------------------------------------------------
+  TOTAL         2213.309 ms    26559643      30.731 ms     368703    72.0x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "test_picture.png.enc" (53864 bytes)
+  -> "test_picture.png.enc.hex.txt" (111096 bytes)
+
+Done. Tera Term saved "test_picture.png.enc" and "test_picture.png.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "test_picture.png.enc": 53864 bytes.
+Not a BMP picture: the whole file (53848 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          68a580d45db251e75b365d891493626c
+Recomputed tag (SW):   68a580d45db251e75b365d891493626c
+Recomputed tag (HW):   68a580d45db251e75b365d891493626c
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 53848 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20      1414.885 ms    16978579      19.953 ms     239398    70.9x
+  Poly1305       798.424 ms     9581059      10.778 ms     129300    74.1x
+  -----------------------------------------------------------------------
+  TOTAL         2213.309 ms    26559638      30.731 ms     368698    72.0x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_test_picture.png" (53848 bytes)
+
+Done. Tera Term saved "decrypted_test_picture.png"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t001.bin": 1 bytes.
+Not a BMP picture: the whole file (1 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): 8bcd9f4f88fe5ce0737482195bff7aa6
+Poly1305 tag (HW): 8bcd9f4f88fe5ce0737482195bff7aa6
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 1 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         1.517 ms       18170       0.026 ms        284    64.0x
+  Poly1305         0.639 ms        7638       0.039 ms        427    17.9x
+  -----------------------------------------------------------------------
+  TOTAL            2.156 ms       25808       0.065 ms        711    36.3x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "t001.bin.enc" (17 bytes)
+  -> "t001.bin.enc.hex.txt" (36 bytes)
+
+Done. Tera Term saved "t001.bin.enc" and "t001.bin.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t001.bin.enc": 17 bytes.
+Not a BMP picture: the whole file (1 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          8bcd9f4f88fe5ce0737482195bff7aa6
+Recomputed tag (SW):   8bcd9f4f88fe5ce0737482195bff7aa6
+Recomputed tag (HW):   8bcd9f4f88fe5ce0737482195bff7aa6
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 1 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         1.517 ms       18169       0.027 ms        284    64.0x
+  Poly1305         0.640 ms        7634       0.038 ms        422    18.1x
+  -----------------------------------------------------------------------
+  TOTAL            2.157 ms       25803       0.065 ms        706    36.5x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_t001.bin" (1 bytes)
+
+Done. Tera Term saved "decrypted_t001.bin"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t063.bin": 63 bytes.
+Not a BMP picture: the whole file (63 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): b4dac8a9d00c88f2c3b375ee88cd8a82
+Poly1305 tag (HW): b4dac8a9d00c88f2c3b375ee88cd8a82
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 63 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         1.672 ms       20030       0.062 ms        708    28.3x
+  Poly1305         1.351 ms       16173       0.057 ms        650    24.9x
+  -----------------------------------------------------------------------
+  TOTAL            3.023 ms       36203       0.119 ms       1358    26.7x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "t063.bin.enc" (79 bytes)
+  -> "t063.bin.enc.hex.txt" (164 bytes)
+
+Done. Tera Term saved "t063.bin.enc" and "t063.bin.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t063.bin.enc": 79 bytes.
+Not a BMP picture: the whole file (63 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          b4dac8a9d00c88f2c3b375ee88cd8a82
+Recomputed tag (SW):   b4dac8a9d00c88f2c3b375ee88cd8a82
+Recomputed tag (HW):   b4dac8a9d00c88f2c3b375ee88cd8a82
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 63 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         1.673 ms       20029       0.062 ms        708    28.3x
+  Poly1305         1.350 ms       16169       0.057 ms        645    25.1x
+  -----------------------------------------------------------------------
+  TOTAL            3.023 ms       36198       0.119 ms       1353    26.8x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_t063.bin" (63 bytes)
+
+Done. Tera Term saved "decrypted_t063.bin"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t064.bin": 64 bytes.
+Not a BMP picture: the whole file (64 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): 8adc659a94f2e8cffa3295ec56c951d9
+Poly1305 tag (HW): 8adc659a94f2e8cffa3295ec56c951d9
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 64 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         1.705 ms       20424       0.058 ms        657    31.1x
+  Poly1305         1.350 ms       16173       0.057 ms        650    24.9x
+  -----------------------------------------------------------------------
+  TOTAL            3.055 ms       36597       0.115 ms       1307    28.0x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "t064.bin.enc" (80 bytes)
+  -> "t064.bin.enc.hex.txt" (166 bytes)
+
+Done. Tera Term saved "t064.bin.enc" and "t064.bin.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t064.bin.enc": 80 bytes.
+Not a BMP picture: the whole file (64 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          8adc659a94f2e8cffa3295ec56c951d9
+Recomputed tag (SW):   8adc659a94f2e8cffa3295ec56c951d9
+Recomputed tag (HW):   8adc659a94f2e8cffa3295ec56c951d9
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 64 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         1.706 ms       20423       0.058 ms        657    31.1x
+  Poly1305         1.351 ms       16169       0.056 ms        645    25.1x
+  -----------------------------------------------------------------------
+  TOTAL            3.057 ms       36592       0.114 ms       1302    28.1x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_t064.bin" (64 bytes)
+
+Done. Tera Term saved "decrypted_t064.bin"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t065.bin": 65 bytes.
+Not a BMP picture: the whole file (65 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): 2b857b17c29e359c0de8e7fd1e80b292
+Poly1305 tag (HW): 2b857b17c29e359c0de8e7fd1e80b292
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 65 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         3.207 ms       38450       0.062 ms        711    54.1x
+  Poly1305         1.588 ms       19018       0.063 ms        718    26.5x
+  -----------------------------------------------------------------------
+  TOTAL            4.795 ms       57468       0.125 ms       1429    40.2x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "t065.bin.enc" (81 bytes)
+  -> "t065.bin.enc.hex.txt" (168 bytes)
+
+Done. Tera Term saved "t065.bin.enc" and "t065.bin.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t065.bin.enc": 81 bytes.
+Not a BMP picture: the whole file (65 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          2b857b17c29e359c0de8e7fd1e80b292
+Recomputed tag (SW):   2b857b17c29e359c0de8e7fd1e80b292
+Recomputed tag (HW):   2b857b17c29e359c0de8e7fd1e80b292
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 65 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         3.207 ms       38449       0.063 ms        711    54.1x
+  Poly1305         1.588 ms       19014       0.063 ms        713    26.7x
+  -----------------------------------------------------------------------
+  TOTAL            4.795 ms       57463       0.126 ms       1424    40.4x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_t065.bin" (65 bytes)
+
+Done. Tera Term saved "decrypted_t065.bin"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t136.bin": 136 bytes.
+Not a BMP picture: the whole file (136 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): fe9724f6229c5602325de24021bff6e2
+Poly1305 tag (HW): fe9724f6229c5602325de24021bff6e2
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 136 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         4.905 ms       58826       0.088 ms       1018    57.8x
+  Poly1305         2.536 ms       30398       0.076 ms        871    34.9x
+  -----------------------------------------------------------------------
+  TOTAL            7.441 ms       89224       0.164 ms       1889    47.2x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "t136.bin.enc" (152 bytes)
+  -> "t136.bin.enc.hex.txt" (314 bytes)
+
+Done. Tera Term saved "t136.bin.enc" and "t136.bin.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "t136.bin.enc": 152 bytes.
+Not a BMP picture: the whole file (136 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          fe9724f6229c5602325de24021bff6e2
+Recomputed tag (SW):   fe9724f6229c5602325de24021bff6e2
+Recomputed tag (HW):   fe9724f6229c5602325de24021bff6e2
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 136 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20         4.905 ms       58825       0.088 ms       1018    57.8x
+  Poly1305         2.536 ms       30394       0.076 ms        866    35.1x
+  -----------------------------------------------------------------------
+  TOTAL            7.441 ms       89219       0.164 ms       1884    47.4x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_t136.bin" (136 bytes)
+
+Done. Tera Term saved "decrypted_t136.bin"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "max_122880.bin": 122880 bytes.
+Not a BMP picture: the whole file (122880 bytes) is encrypted / decrypted.
+Encrypting in software and in hardware (the software needs a few seconds)...
+
+ENCRYPTION FINISHED (key "my 32-byte secret key 4 ChaCha20", nonce "unique nonce")
+Poly1305 tag (SW): ef42b56ac16dec30c67ed6583463e82d
+Poly1305 tag (HW): ef42b56ac16dec30c67ed6583463e82d
+Checks: ciphertext SW == HW PASS | tag SW == HW PASS
+(software and hardware give exactly the same encrypted file, so one file is sent)
+
+SUMMARY - ENCRYPTION, 122880 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20      3226.584 ms    38718978      45.474 ms     545653    71.0x
+  Poly1305      1821.203 ms    21854393      24.524 ms     294257    74.3x
+  -----------------------------------------------------------------------
+  TOTAL         5047.787 ms    60573371      69.998 ms     839910    72.1x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "max_122880.bin.enc" (122896 bytes)
+  -> "max_122880.bin.enc.hex.txt" (253474 bytes)
+
+Done. Tera Term saved "max_122880.bin.enc" and "max_122880.bin.enc.hex.txt"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "max_122880.bin.enc": 122896 bytes.
+Not a BMP picture: the whole file (122880 bytes) is encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          ef42b56ac16dec30c67ed6583463e82d
+Recomputed tag (SW):   ef42b56ac16dec30c67ed6583463e82d
+Recomputed tag (HW):   ef42b56ac16dec30c67ed6583463e82d
+Tag OK: the file was not changed.
+
+DECRYPTION FINISHED
+Checks: tag SW == HW PASS | decrypted file SW == HW PASS
+
+SUMMARY - DECRYPTION, 122880 bytes encrypted, one run, 12 MHz CPU (time = 1 us counter)
+              ------- Software --------  ------- Hardware -------
+                 total time      cycles     total time     cycles  Speedup
+  ChaCha20      3226.585 ms    38718977      45.474 ms     545653    71.0x
+  Poly1305      1821.202 ms    21854389      24.524 ms     294252    74.3x
+  -----------------------------------------------------------------------
+  TOTAL         5047.787 ms    60573366      69.998 ms     839905    72.1x
+ALL CHECKS PASSED
+
+Save the result now:  Tera Term: File > Transfer > YMODEM > Receive
+  -> "decrypted_max_122880.bin" (122880 bytes)
+
+Done. Tera Term saved "decrypted_max_122880.bin"
+in its transfer folder (File > Change directory... shows / sets that folder).
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "tampered_pixel.enc.bmp": 112390 bytes.
+BMP picture: the 54-byte header stays in clear (protected by the tag),
+the 112320 bytes of pixels are encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          8e85402dda6dcdb2748d6acb37f54822
+Recomputed tag (SW):   2511d356ca0f88952a0ca447869f814b
+Recomputed tag (HW):   2511d356ca0f88952a0ca447869f814b
+REJECTED: the tag is wrong (file changed, or wrong key/nonce). Nothing was decrypted.
+(tag check: software 1665676 us, hardware 22433 us)
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 2
+
+Send the ENCRYPTED file (the .enc or .enc.bmp file) now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122896 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+Received "tampered_header.enc.bmp": 112390 bytes.
+BMP picture: the 54-byte header stays in clear (protected by the tag),
+the 112320 bytes of pixels are encrypted / decrypted.
+Checking and decrypting in software and in hardware...
+
+Received tag:          8e85402dda6dcdb2748d6acb37f54822
+Recomputed tag (SW):   293dd4a5bb80f6728756ce70751f15ed
+Recomputed tag (HW):   293dd4a5bb80f6728756ce70751f15ed
+REJECTED: the tag is wrong (file changed, or wrong key/nonce). Nothing was decrypted.
+(tag check: software 1665675 us, hardware 22433 us)
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 1
+
+Send the file to ENCRYPT now:
+  Tera Term: File > Transfer > YMODEM > Send...  > choose the file > Open
+  (largest 122880 bytes; the board waits 120 s; the letters C below are the board asking - normal)
+C
+The file is too big: 123000 bytes (largest 122880). Nothing was done.
+
+=== FILE CRYPTO (115200 baud) ===
+Key: "my 32-byte secret key 4 ChaCha20"   Nonce: "unique nonce"   (ChaCha20-Poly1305, RFC 8439)
+BMP pictures: the header stays in clear (AAD), only the pixels are encrypted.
+  1 = encrypt a file
+  2 = decrypt a file
+Choose 1 or 2: 

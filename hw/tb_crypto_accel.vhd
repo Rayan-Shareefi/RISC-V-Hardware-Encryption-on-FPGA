@@ -6,7 +6,7 @@
 --   1) RFC 8439 2.3.2  block function     (plaintext = zeros -> keystream)
 --   2) RFC 8439 2.4.2  "sunscreen", block 1 (counter = 1)
 --   3) RFC 8439 2.4.2  "sunscreen", block 2 (counter = 2, last 14 bytes zero)
---   4) the project-1 test   key = 0, nonce = 0, counter = 1, "Hello my chacha20"
+--   4) project-1 test  key = 0, nonce = 0, counter = 1, "Hello my chacha20"
 -- For every test it also checks: done goes low on start, busy is high while
 -- computing, the latency, and that done + data_out stay stable afterwards.
 --

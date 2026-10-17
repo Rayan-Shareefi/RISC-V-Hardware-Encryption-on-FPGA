@@ -6,6 +6,7 @@
 /xic/
 /Tools/
 /*.lnk
+.claude/
 
 # ---- Vivado generated folders (rebuilt automatically) ----
 Projects/*/*.cache/
@@ -26,3 +27,25 @@ xsim.dir/
 
 # ---- Office lock files ----
 ~$*
+
+# ---- kept on this PC only: personal, university and old files (not on GitHub) ----
+/CLAUDE.md
+/HANDOVER.md
+/*.docx
+/*.pdf
+/report/
+/old vhdl files/
+/old c files/
+/pk/
+/VC code/
+/hw/upload.ps1
+/profile-readme/
+# results: old phases, old program versions, Vivado reports with PC paths,
+# and logs from before the test was renamed
+/results/phase*
+/results/*.rpt
+/results/my_crypto_board.txt
+/results/file_crypto_board.txt
+/results/hw_selftest_keccak256_board.txt
+/results/stepC_crypto_hw_test_board.txt
+/results/stepC_system_sim.txt

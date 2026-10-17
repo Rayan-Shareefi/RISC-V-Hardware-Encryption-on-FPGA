@@ -1,0 +1,167 @@
+my_crypto menu version (2026-10-13), board Cmod A7-35T, bitstream demo/neorv32_crypto.bit, 12 MHz.
+Options 1-6 chosen in order (software before hardware, so the hardware options print the speedup).
+Default inputs of my_crypto.c: message "test", AAD "AAD key". Hex values checked against the Python
+reference (scripts/gen_poly1305_vectors.py AEAD + gen_keccak_vectors.py): all equal.
+
+=================================================================
+ MY CRYPTO TEST - your own inputs (edit my_crypto.c)
+ NEORV32 RISC-V (rv32imc) on the Cmod A7-35T, 12 MHz
+ Custom crypto instructions (CFU): yes
+=================================================================
+
+Inputs
+  Message (4 bytes): "test"
+    74657374
+  AAD (7 bytes, sent in clear, protected by the tag): "AAD key"
+    414144206b6579
+  Key:   "my 32-byte secret key 4 ChaCha20"
+    6d792033322d6279746520736563726574206b65792034204368614368613230
+  Nonce: "unique nonce"
+    756e69717565206e6f6e6365
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 1
+
+[1] ChaCha20 SOFTWARE: encrypt your 4-byte message (key, nonce, counter 1)
+  Ciphertext:
+    a67ec2b7
+  Check against the hardware: PASS (same result)
+
+  Timing (LD1 on, please wait)...
+  ChaCha20 SW, 1000 runs
+    cycles = end_cycle - start_cycle = 18102043   (one run: 18102 cycles)
+    time   = cycles / 12 MHz = 1508.503 ms   (one run: 1508.503 us)
+    1 us counter: end_us - start_us = 1508.501 ms
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 2
+
+[2] ChaCha20 HARDWARE: encrypt your 4-byte message (key, nonce, counter 1)
+  Ciphertext:
+    a67ec2b7
+  Check against the software: PASS (same result)
+
+  Timing (LD2 on, please wait)...
+  ChaCha20 HW, 1000 runs
+    cycles = end_cycle - start_cycle = 223043   (one run: 223 cycles)
+    time   = cycles / 12 MHz = 18.586 ms   (one run: 18.586 us)
+    1 us counter: end_us - start_us = 18.584 ms
+  Speedup ChaCha20: 81.2x faster in hardware
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 3
+
+[3] Poly1305 SOFTWARE: ChaCha20-Poly1305 (RFC 8439)
+  ChaCha20 runs first (one-time key = block 0, ciphertext = blocks 1, 2, ...),
+  then Poly1305 makes the 16-byte tag of the MAC input.
+  ChaCha20 ciphertext:
+    a67ec2b7
+  Poly1305 one-time key (first 32 bytes of ChaCha20 block 0):
+    6d839942b5badf7e9a29168e9fc7c261eb0a10e3d2f159cb636f168d9c9400c6
+  Poly1305 MAC input (48 bytes = AAD | zeros | ciphertext | zeros | lengths):
+    414144206b6579000000000000000000a67ec2b7000000000000000000000000
+    07000000000000000400000000000000
+  Poly1305 tag:
+    b93a358c8797664e76a43ebfcf7d50ba
+  Check against the hardware: PASS (same result)
+
+  Timing (LD1 on, please wait)...
+  ChaCha20 SW (one-time key + encrypt), 1000 runs
+    cycles = end_cycle - start_cycle = 36173047   (one run: 36173 cycles)
+    time   = cycles / 12 MHz = 3014.420 ms   (one run: 3014.420 us)
+    1 us counter: end_us - start_us = 3014.418 ms
+  Poly1305 SW (MAC input + tag), 1000 runs
+    cycles = end_cycle - start_cycle = 10933042   (one run: 10933 cycles)
+    time   = cycles / 12 MHz = 911.086 ms   (one run: 911.086 us)
+    1 us counter: end_us - start_us = 911.084 ms
+  TOTAL SW = ChaCha20 + Poly1305, 1000 runs
+    cycles = end_cycle - start_cycle = 47106089   (one run: 47106 cycles)
+    time   = cycles / 12 MHz = 3925.507 ms   (one run: 3925.507 us)
+    1 us counter: end_us - start_us = 3925.502 ms
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 4
+
+[4] Poly1305 HARDWARE: ChaCha20-Poly1305 (RFC 8439)
+  ChaCha20 runs first (one-time key = block 0, ciphertext = blocks 1, 2, ...),
+  then Poly1305 makes the 16-byte tag of the MAC input.
+  ChaCha20 ciphertext:
+    a67ec2b7
+  Poly1305 one-time key (first 32 bytes of ChaCha20 block 0):
+    6d839942b5badf7e9a29168e9fc7c261eb0a10e3d2f159cb636f168d9c9400c6
+  Poly1305 MAC input (48 bytes = AAD | zeros | ciphertext | zeros | lengths):
+    414144206b6579000000000000000000a67ec2b7000000000000000000000000
+    07000000000000000400000000000000
+  Poly1305 tag:
+    b93a358c8797664e76a43ebfcf7d50ba
+  Check against the software: PASS (same result)
+
+  Timing (LD2 on, please wait)...
+  ChaCha20 HW (one-time key + encrypt), 1000 runs
+    cycles = end_cycle - start_cycle = 600047   (one run: 600 cycles)
+    time   = cycles / 12 MHz = 50.003 ms   (one run: 50.003 us)
+    1 us counter: end_us - start_us = 50.001 ms
+  Poly1305 HW (MAC input + tag), 1000 runs
+    cycles = end_cycle - start_cycle = 892042   (one run: 892 cycles)
+    time   = cycles / 12 MHz = 74.336 ms   (one run: 74.336 us)
+    1 us counter: end_us - start_us = 74.334 ms
+  TOTAL HW = ChaCha20 + Poly1305, 1000 runs
+    cycles = end_cycle - start_cycle = 1492089   (one run: 1492 cycles)
+    time   = cycles / 12 MHz = 124.340 ms   (one run: 124.340 us)
+    1 us counter: end_us - start_us = 124.335 ms
+  Speedup ChaCha20: 60.3x faster in hardware
+  Speedup Poly1305: 12.3x faster in hardware
+  Speedup TOTAL   : 31.6x faster in hardware
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 5
+
+[5] Keccak-256 SOFTWARE: hash of your 4-byte message
+  Keccak-256 hash:
+    9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658
+  Check against the hardware: PASS (same result)
+
+  Timing (LD1 on, please wait)...
+  Keccak-256 SW, 1000 runs
+    cycles = end_cycle - start_cycle = 130284046   (one run: 130284 cycles)
+    time   = cycles / 12 MHz = 10857.003 ms   (one run: 10857.003 us)
+    1 us counter: end_us - start_us = 10857.001 ms
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 6
+
+[6] Keccak-256 HARDWARE: hash of your 4-byte message
+  Keccak-256 hash:
+    9c22ff5f21f0b81b113e63f7db6da94fedef11b2119b4088b89664fb9a3cb658
+  Check against the software: PASS (same result)
+
+  Timing (LD2 on, please wait)...
+  Keccak-256 HW, 1000 runs
+    cycles = end_cycle - start_cycle = 209046   (one run: 209 cycles)
+    time   = cycles / 12 MHz = 17.420 ms   (one run: 17.420 us)
+    1 us counter: end_us - start_us = 17.418 ms
+  Speedup Keccak-256: 623.2x faster in hardware
+
+=================== MENU (1000 runs per timing) ===================
+  1 = ChaCha20 software      2 = ChaCha20 hardware
+  3 = Poly1305 software      4 = Poly1305 hardware   (ChaCha20 + Poly1305 + total)
+  5 = Keccak-256 software    6 = Keccak-256 hardware
+Choose 1-6: 
