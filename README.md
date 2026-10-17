@@ -1,4 +1,4 @@
-# FPGA RISC-V Hardware Encryption
+# RISC-V Hardware Encryption on FPGA
 
 A small RISC-V processor on an FPGA chip, with encryption hardware I added to it.
 It encrypts a 110 KB picture in **0.064 seconds instead of 4.6 seconds**, 72 times faster
