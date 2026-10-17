@@ -93,7 +93,7 @@ project in `D:\Graduation-Project`; if yours is elsewhere, change `VIVADO_BIN` i
 
 ## Status
 
-Finished as my final-year computer engineering project (October 2026); it may still change.
+It may still change.
 It is a learning and research design: it has not been security-audited and does not defend
 against side-channel attacks, so do not use it to protect real secrets.
 
