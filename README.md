@@ -99,6 +99,7 @@ against side-channel attacks, so do not use it to protect real secrets.
 
 ## Credits and license
 
+- My team set up the RISC-V processor, based on the open-source NEORV32 core, another team built the encryption for ChaCha20, Poly1305 and Keccak-256, and I integrated both on an Artix-7 FPGA. It encrypts a 110 KB picture 72 times faster than software.
 - Built by [Rayan Shareefi](https://github.com/Rayan-Shareefi). My code is under the [MIT license](LICENSE).
 - [NEORV32](https://github.com/stnolting/neorv32) by Stephan Nolting (BSD 3-Clause), in `neorv32-main/`.
 - The Poly1305 core comes from [FPGA-House-AG/ChaCha20Poly1305](https://github.com/FPGA-House-AG/ChaCha20Poly1305)
